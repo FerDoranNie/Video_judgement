@@ -112,6 +112,12 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
       return;
     }
 
+    const notReady = files.filter(f => fileStatus[f.id] !== 'ready');
+    if (notReady.length > 0) {
+      alert("Algunos videos aún no están listos.");
+      return;
+    }
+
     setIsPublishing(true);
     onPublish(tournamentName.trim(), files);
   };
@@ -126,7 +132,7 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
           </div>
           <h1 className="text-3xl font-bold mb-2">Configuración del Torneo</h1>
           <p className="text-gray-400 max-w-2xl mx-auto">
-            Sube los videos al servidor.
+            Sube los videos al servidor. (Máx 3GB por video)
           </p>
         </div>
 
@@ -172,7 +178,7 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
             </div>
             <div>
               <p className="text-lg font-medium text-white">Haz clic o arrastra archivos de video aquí</p>
-              <p className="text-sm text-gray-500 mt-1">Se subirán automáticamente al servidor</p>
+              <p className="text-sm text-gray-500 mt-1">Se guardarán temporalmente en el servidor</p>
             </div>
           </div>
         </div>
@@ -253,10 +259,14 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
                     className="w-full h-full object-contain"
                     controls
                     preload="metadata"
-                    onLoadedMetadata={() => {
-                        if (fileStatus[file.id] !== 'ready') updateFileStatus(file.id, 'ready');
+                    // REMOVED: onLoadedMetadata no longer controls 'ready' status. 
+                    // Status is only controlled by the upload API response.
+                    onError={() => {
+                        // Only error if we aren't uploading (i.e. if preview failed)
+                        if (fileStatus[file.id] !== 'uploading') {
+                           // Optional: visual feedback for broken preview, but don't fail the upload logic
+                        }
                     }}
-                    onError={() => updateFileStatus(file.id, 'error')}
                   />
                 </div>
 

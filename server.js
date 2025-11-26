@@ -10,7 +10,8 @@ const PORT = process.env.PORT || 8080;
 
 // -- Middleware --
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // -- Storage Configuration for Cloud Run --
 // CRITICAL FIX: Cloud Run file system is read-only except for /tmp
@@ -39,10 +40,10 @@ const storage = multer.diskStorage({
   }
 });
 
-// Limit file size to avoid crashing memory (e.g. 100MB limit per file)
+// Limit file size to 3GB
 const upload = multer({ 
   storage,
-  limits: { fileSize: 100 * 1024 * 1024 } 
+  limits: { fileSize: 3000 * 1024 * 1024 } 
 });
 
 // -- In-Memory State --
@@ -55,19 +56,33 @@ const tournaments = {};
 app.get('/api/health', (req, res) => res.send('OK'));
 
 // 2. Upload Video
-app.post('/api/upload', upload.single('video'), (req, res) => {
-  if (!req.file) {
-    console.error("Upload failed: No file received");
-    return res.status(400).json({ error: 'No video file provided' });
-  }
-  
-  console.log(`File uploaded successfully: ${req.file.filename} size: ${req.file.size}`);
+// Added Error Handling Wrapper for Multer
+app.post('/api/upload', (req, res) => {
+  const uploadSingle = upload.single('video');
 
-  const publicUrl = `/uploads/${req.file.filename}`;
-  res.json({ 
-    url: publicUrl, 
-    filename: req.file.filename,
-    originalName: req.file.originalname 
+  uploadSingle(req, res, function (err) {
+    if (err instanceof multer.MulterError) {
+      console.error("Multer Error:", err);
+      return res.status(500).json({ error: err.message });
+    } else if (err) {
+      console.error("Unknown Upload Error:", err);
+      return res.status(500).json({ error: "Unknown upload error" });
+    }
+
+    // Success
+    if (!req.file) {
+      console.error("Upload failed: No file received");
+      return res.status(400).json({ error: 'No video file provided' });
+    }
+    
+    console.log(`File uploaded successfully: ${req.file.filename} size: ${(req.file.size / 1024 / 1024).toFixed(2)} MB`);
+
+    const publicUrl = `/uploads/${req.file.filename}`;
+    res.json({ 
+      url: publicUrl, 
+      filename: req.file.filename,
+      originalName: req.file.originalname 
+    });
   });
 });
 
@@ -150,7 +165,16 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-app.listen(PORT, () => {
+// Create Server Instance
+const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Upload directory: ${uploadDir}`);
+  console.log(`Max Upload Size: 3GB`);
 });
+
+// CRITICAL for Large Uploads:
+// Node.js defaults to 2 minutes (120000ms). 3GB uploads will likely take longer.
+// Setting timeout to 1 Hour (3600000 ms).
+server.keepAliveTimeout = 3600000;
+server.headersTimeout = 3600000;
+server.timeout = 3600000;
