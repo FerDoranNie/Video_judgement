@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { VideoItem } from '../types';
-import { Upload, FileVideo, Trash2, Cloud, Loader2, Share2, CheckCircle2, AlertCircle, RefreshCw, Server } from 'lucide-react';
+import { Upload, FileVideo, Trash2, Cloud, Loader2, Share2, CheckCircle2, AlertCircle, RefreshCw, Server, Wifi } from 'lucide-react';
 import { MOCK_VIDEOS } from '../services/mockData';
 import { api } from '../services/api';
 
@@ -19,14 +19,19 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
   const [isPublishing, setIsPublishing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Server Status State
-  const [serverStatus, setServerStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+  // Server Status State - Optimista: Asumimos online para no bloquear la UI
+  const [serverStatus, setServerStatus] = useState<'checking' | 'online' | 'warning'>('checking');
+
+  const checkConnection = () => {
+    setServerStatus('checking');
+    api.checkHealth().then(isOnline => {
+      // Si falla, ponemos warning pero NO bloqueamos
+      setServerStatus(isOnline ? 'online' : 'warning');
+    });
+  };
 
   useEffect(() => {
-    // Check connection on mount
-    api.checkHealth().then(isOnline => {
-      setServerStatus(isOnline ? 'online' : 'offline');
-    });
+    checkConnection();
   }, []);
 
   const updateFileStatus = (id: string, status: 'loading' | 'ready' | 'error' | 'uploading' | 'local') => {
@@ -99,7 +104,7 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
     
     const notReady = files.filter(f => fileStatus[f.id] !== 'ready');
     if (notReady.length > 0) {
-      alert(`Error: Tienes ${notReady.length} videos sin subir. Reintenta o elimínalos.`);
+      alert(`Error: Tienes ${notReady.length} videos sin subir correctamente. Reintenta subir los que están en rojo.`);
       return;
     }
 
@@ -120,15 +125,20 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
       <div className="w-full max-w-6xl">
         <div className="mb-8 text-center relative">
           
-          <div className="absolute top-0 right-0">
-             {serverStatus === 'checking' && <span className="text-gray-500 text-xs flex items-center gap-1"><Loader2 className="animate-spin h-3 w-3"/> Conectando...</span>}
-             {serverStatus === 'online' && <span className="text-green-500 text-xs flex items-center gap-1"><Server className="h-3 w-3"/> Servidor V4 Online</span>}
-             {serverStatus === 'offline' && <span className="text-red-500 text-xs flex items-center gap-1"><AlertCircle className="h-3 w-3"/> Sin Conexión</span>}
+          {/* Status Indicator (Non-blocking) */}
+          <div className="absolute top-0 right-0 flex items-center gap-2 bg-gray-800 px-3 py-1 rounded-full shadow-sm border border-gray-700">
+             {serverStatus === 'checking' && <span className="text-gray-400 text-xs flex items-center gap-1"><Loader2 className="animate-spin h-3 w-3"/> Verificando Servidor...</span>}
+             {serverStatus === 'online' && <span className="text-green-500 text-xs flex items-center gap-1"><Server className="h-3 w-3"/> Nube Conectada</span>}
+             {serverStatus === 'warning' && (
+               <span className="text-yellow-500 text-xs flex items-center gap-1" title="Podría haber lentitud">
+                 <Wifi className="h-3 w-3"/> Conexión inestable
+               </span>
+             )}
           </div>
 
           <Cloud className="w-12 h-12 text-purple-500 mx-auto mb-2" />
           <h1 className="text-3xl font-bold">Crear Torneo</h1>
-          <p className="text-gray-400">Sube tus videos al servidor para compartir el código.</p>
+          <p className="text-gray-400">Sube tus videos a Cloud Run para generar un código compartido.</p>
         </div>
 
         <div className="max-w-md mx-auto mb-8">
@@ -136,7 +146,7 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
             type="text" 
             value={tournamentName}
             onChange={(e) => setTournamentName(e.target.value)}
-            className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white text-lg"
+            className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white text-lg focus:ring-2 focus:ring-purple-500 outline-none"
             placeholder="Nombre del Torneo..."
           />
         </div>
@@ -148,68 +158,73 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
         >
           <input type="file" ref={fileInputRef} className="hidden" multiple accept="video/*" onChange={(e) => processFiles(e.target.files)} />
           <Upload className="w-8 h-8 mx-auto text-gray-400 mb-2" />
-          <p>Click o Arrastrar videos aquí</p>
+          <p className="font-medium">Haga clic o arrastre los archivos de video aquí</p>
+          <p className="text-xs text-gray-500 mt-1">Soportados MP4, WebM (Máx 4GB)</p>
         </div>
         
         {files.length === 0 && (
-           <button onClick={handleUseDemoData} className="block mx-auto text-sm text-gray-500 underline mb-8">Cargar Datos de Demo</button>
+           <button onClick={handleUseDemoData} className="block mx-auto text-sm text-gray-600 hover:text-gray-400 underline mb-8">
+             ¿Solo probando? Cargar Datos de Demo
+           </button>
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-24">
             {files.map((file, index) => (
-              <div key={file.id} className={`relative bg-gray-800 rounded-xl overflow-hidden border-2 ${fileStatus[file.id] === 'error' ? 'border-red-500' : 'border-gray-700'}`}>
+              <div key={file.id} className={`relative bg-gray-800 rounded-xl overflow-hidden border-2 transition-all ${fileStatus[file.id] === 'error' ? 'border-red-500 bg-red-900/10' : 'border-gray-700'}`}>
                 
                 <div className="absolute top-2 left-2 z-20 flex gap-2">
-                   {fileStatus[file.id] === 'uploading' && <span className="bg-blue-600 text-xs px-2 py-1 rounded text-white animate-pulse">Subiendo...</span>}
-                   {fileStatus[file.id] === 'ready' && <span className="bg-green-600 text-xs px-2 py-1 rounded text-white font-bold flex items-center gap-1"><CheckCircle2 size={12}/> Listo</span>}
-                   {fileStatus[file.id] === 'error' && <span className="bg-red-600 text-xs px-2 py-1 rounded text-white font-bold">Error</span>}
+                   {fileStatus[file.id] === 'uploading' && <span className="bg-blue-600 text-xs px-2 py-1 rounded text-white animate-pulse shadow">Subiendo...</span>}
+                   {fileStatus[file.id] === 'ready' && <span className="bg-green-600 text-xs px-2 py-1 rounded text-white font-bold flex items-center gap-1 shadow"><CheckCircle2 size={12}/> Listo</span>}
+                   {fileStatus[file.id] === 'error' && <span className="bg-red-600 text-xs px-2 py-1 rounded text-white font-bold shadow">Error</span>}
                 </div>
 
-                <button onClick={() => handleRemove(file.id)} className="absolute top-2 right-2 z-20 bg-black/50 p-1 rounded-full hover:bg-red-600 text-white transition"><Trash2 size={16}/></button>
+                <button onClick={() => handleRemove(file.id)} className="absolute top-2 right-2 z-20 bg-black/50 p-1.5 rounded-full hover:bg-red-600 text-white transition backdrop-blur-sm"><Trash2 size={16}/></button>
                 
-                <div className="aspect-video bg-black flex items-center justify-center relative">
+                <div className="aspect-video bg-black flex items-center justify-center relative group">
                    {file.url ? (
-                      <video src={file.url} className="w-full h-full object-contain" controls />
+                      <video src={file.url} className="w-full h-full object-contain" controls preload="metadata" />
                    ) : (
                       <div className="text-gray-500 flex flex-col items-center">
-                         {fileStatus[file.id] === 'uploading' ? <Loader2 className="animate-spin mb-2"/> : <FileVideo />}
-                         <span className="text-xs">{fileStatus[file.id] === 'uploading' ? 'Procesando...' : 'Esperando...'}</span>
+                         {fileStatus[file.id] === 'uploading' ? <Loader2 className="animate-spin mb-2 w-8 h-8 text-blue-500"/> : <FileVideo className="w-8 h-8 mb-2"/>}
+                         <span className="text-xs font-mono">{fileStatus[file.id] === 'uploading' ? 'Enviando...' : 'Pendiente'}</span>
                       </div>
                    )}
 
+                   {/* Error Overlay with Retry */}
                    {fileStatus[file.id] === 'error' && (
-                     <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-10 p-4 text-center">
-                        <p className="text-red-400 text-xs mb-2">{errorDetails[file.id]}</p>
+                     <div className="absolute inset-0 bg-gray-900/90 flex flex-col items-center justify-center z-10 p-4 text-center">
+                        <AlertCircle className="text-red-500 w-8 h-8 mb-2" />
+                        <p className="text-red-200 text-xs mb-3 font-medium">{errorDetails[file.id] || "Error de red"}</p>
                         <button 
                           onClick={() => handleRetry(file.id)}
-                          className="bg-white text-black px-4 py-2 rounded-full font-bold flex items-center gap-2 hover:scale-105 transition"
+                          className="bg-white text-black px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 hover:bg-gray-200 transition shadow-lg"
                         >
-                          <RefreshCw size={16} /> Reintentar
+                          <RefreshCw size={14} /> Reintentar
                         </button>
                      </div>
                    )}
                 </div>
                 
-                <div className="p-3">
-                   <p className="truncate text-sm font-bold">{file.title}</p>
+                <div className="p-3 border-t border-gray-700/50">
+                   <p className="truncate text-sm font-bold text-gray-200" title={file.title}>{file.title}</p>
                 </div>
               </div>
             ))}
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-gray-900 border-t border-gray-800 flex justify-center z-50 shadow-2xl">
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-gray-900/95 backdrop-blur border-t border-gray-800 flex justify-center z-50 shadow-2xl">
            <button
              onClick={handleStart}
              disabled={isPublishing || files.length < 2}
              className={`
-               font-bold py-4 px-10 rounded-xl flex items-center gap-2 text-lg shadow-lg transition-all
+               font-bold py-4 px-10 rounded-xl flex items-center gap-2 text-lg shadow-xl transition-all
                ${(isPublishing || files.length < 2) 
-                 ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
+                 ? 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700' 
                  : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white transform hover:scale-105'}
              `}
            >
              {isPublishing ? <Loader2 className="animate-spin"/> : <Share2 />}
-             {isPublishing ? 'Creando...' : 'Publicar y Obtener Código'}
+             {isPublishing ? 'Publicando Torneo...' : 'Publicar y Obtener Código'}
            </button>
         </div>
       </div>

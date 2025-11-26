@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { VideoItem, VoteRecord } from '../types';
-import { Trophy, Share2, Cloud } from 'lucide-react';
+import { Trophy, Share2, Cloud, Download, Users } from 'lucide-react';
+import { api } from '../services/api';
 
 interface ResultsScreenProps {
   winner: VideoItem;
@@ -11,9 +12,10 @@ interface ResultsScreenProps {
 
 const ResultsScreen: React.FC<ResultsScreenProps> = ({ winner, history, allVideos, tournamentCode }) => {
   const [top10, setTop10] = useState<VideoItem[]>([]);
+  const [loadingGlobal, setLoadingGlobal] = useState(false);
   
+  // Cálculo local inicial (solo para mostrar algo inmediato al usuario)
   useEffect(() => {
-    // Calculate Rankings based on "Wins" locally
     const winCounts: Record<string, number> = {};
     allVideos.forEach(v => winCounts[v.id] = 0);
     
@@ -23,14 +25,12 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ winner, history, allVideo
       }
     });
 
-    // Sort by wins descending
     const sorted = [...allVideos].sort((a, b) => {
       const winsA = winCounts[a.id] || 0;
       const winsB = winCounts[b.id] || 0;
       return winsB - winsA;
     });
 
-    // Ensure the actual tournament winner is #1 locally
     const finalSorted = [
       winner, 
       ...sorted.filter(v => v.id !== winner.id)
@@ -39,27 +39,60 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ winner, history, allVideo
     setTop10(finalSorted);
   }, [winner, history, allVideos]);
 
-  const exportToSheets = () => {
-    // Mocking the Google Sheets CSV structure
-    const headers = ['Rango', 'Titulo de Video', 'ID de Video', 'Total Victorias'];
-    const rows = top10.map((v, i) => {
-       const wins = history.filter(h => h.winnerId === v.id).length;
-       return [`${i + 1}`, v.title, v.id, `${wins}`];
-    });
+  const downloadGlobalCSV = async () => {
+    setLoadingGlobal(true);
+    try {
+      // 1. Obtener datos de TODOS los usuarios desde el servidor
+      const { votes, videos } = await api.getGlobalResults(tournamentCode);
+      
+      if (!votes || votes.length === 0) {
+        alert("Aún no hay votos registrados en el servidor.");
+        setLoadingGlobal(false);
+        return;
+      }
 
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + headers.join(",") + "\n" 
-      + rows.map(e => e.join(",")).join("\n");
+      // 2. Calcular Ranking Global
+      const globalWins: Record<string, number> = {};
+      videos.forEach(v => globalWins[v.id] = 0);
 
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `resultados_${tournamentCode}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    alert("Resultados descargados en CSV.");
+      votes.forEach(vote => {
+        // Asegurar que contamos votos válidos para videos existentes
+        if (globalWins[vote.winnerId] !== undefined) {
+          globalWins[vote.winnerId]++;
+        }
+      });
+
+      // 3. Ordenar del 1 al N
+      const sortedVideos = [...videos].sort((a, b) => {
+        return (globalWins[b.id] || 0) - (globalWins[a.id] || 0);
+      });
+
+      // 4. Generar CSV
+      const headers = ['Ranking Global', 'Titulo', 'ID Video', 'Votos Totales', 'Votos Locales (Tuyos)'];
+      const rows = sortedVideos.map((v, i) => {
+        const globalCount = globalWins[v.id] || 0;
+        const localCount = history.filter(h => h.winnerId === v.id).length;
+        return [`${i + 1}`, `"${v.title}"`, v.id, `${globalCount}`, `${localCount}`];
+      });
+
+      const csvContent = "data:text/csv;charset=utf-8," 
+        + headers.join(",") + "\n" 
+        + rows.map(e => e.join(",")).join("\n");
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `RESULTADOS_GLOBALES_${tournamentCode}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+    } catch (error) {
+      console.error(error);
+      alert("Error al descargar resultados globales. Verifica tu conexión.");
+    } finally {
+      setLoadingGlobal(false);
+    }
   };
 
   return (
@@ -82,20 +115,42 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ winner, history, allVideo
            <div className="relative aspect-video bg-black">
              <video src={winner.url} controls className="w-full h-full object-contain" />
              <div className="absolute top-4 left-4 bg-yellow-500 text-black font-bold px-3 py-1 rounded shadow">
-               #1 CAMPEÓN
+               #1 CAMPEÓN (Tu elección)
              </div>
            </div>
            <div className="p-6">
              <h2 className="text-2xl font-bold mb-2">{winner.title}</h2>
-             <p className="text-gray-400">Ganador de tu bracket personal.</p>
+             <p className="text-gray-400">Has completado el torneo.</p>
            </div>
         </div>
 
-        {/* Top 10 List */}
+        {/* Global Stats Action Area */}
+        <div className="bg-indigo-900/40 border border-indigo-500/30 rounded-2xl p-6 mb-8 text-center">
+           <h3 className="text-xl font-bold mb-2 flex items-center justify-center gap-2">
+             <Users className="text-indigo-400"/> Resultados Globales
+           </h3>
+           <p className="text-sm text-gray-400 mb-6">
+             Descarga el archivo CSV con la sumatoria de votos de todos los invitados que han participado usando el código <strong>{tournamentCode}</strong>.
+           </p>
+           <button 
+            onClick={downloadGlobalCSV}
+            disabled={loadingGlobal}
+            className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-xl transition shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loadingGlobal ? (
+              <span className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></span>
+            ) : (
+              <Download className="w-5 h-5" />
+            )}
+            {loadingGlobal ? 'Recopilando Votos...' : 'Descargar Ranking Global (CSV)'}
+          </button>
+        </div>
+
+        {/* Local Top 10 List */}
         <div className="bg-gray-800 rounded-2xl shadow-xl border border-gray-700 overflow-hidden mb-8">
           <div className="p-6 border-b border-gray-700 flex justify-between items-center">
-            <h3 className="text-xl font-bold">Tu Top 10</h3>
-            <span className="text-sm text-gray-500">Basado en tus duelos</span>
+            <h3 className="text-xl font-bold">Tu Top 10 Personal</h3>
+            <span className="text-sm text-gray-500">Resultados de tu sesión</span>
           </div>
           <div className="divide-y divide-gray-700">
             {top10.map((video, index) => (
@@ -116,20 +171,13 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ winner, history, allVideo
           </div>
         </div>
 
-        {/* Actions */}
-        <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          <button 
-            onClick={exportToSheets}
-            className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition"
-          >
-            <Cloud className="w-5 h-5" />
-            Descargar mis Resultados
-          </button>
+        {/* Footer Actions */}
+        <div className="flex justify-center">
           <button 
              onClick={() => window.location.reload()}
-             className="flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg transition"
+             className="flex items-center justify-center gap-2 text-gray-400 hover:text-white font-medium py-3 px-6 transition"
           >
-            <Share2 className="w-5 h-5" />
+            <Share2 className="w-4 h-4" />
             Volver al Inicio
           </button>
         </div>
