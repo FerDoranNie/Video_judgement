@@ -12,6 +12,7 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
   const [tournamentName, setTournamentName] = useState('');
   const [files, setFiles] = useState<VideoItem[]>([]);
   const [fileStatus, setFileStatus] = useState<Record<string, 'loading' | 'ready' | 'error' | 'uploading'>>({});
+  const [errorDetails, setErrorDetails] = useState<Record<string, string>>({});
   const [isDragging, setIsDragging] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -22,22 +23,20 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
 
   const processFiles = async (fileList: FileList | null) => {
     if (!fileList) return;
-
-    // Convert FileList to array
     const rawFiles = Array.from(fileList).filter(file => file.type.startsWith('video/'));
     
-    // Create placeholders immediately for UI feedback
+    // Create placeholders
     const newPlaceholders: VideoItem[] = rawFiles.map(file => ({
       id: crypto.randomUUID(),
       title: file.name.replace(/\.[^/.]+$/, ""),
-      url: URL.createObjectURL(file), // Temporary local blob for preview
+      url: URL.createObjectURL(file), // Preview local
       thumbnail: '',
-      driveId: 'pending' // Flag
+      driveId: 'pending'
     }));
 
     setFiles(prev => [...prev, ...newPlaceholders]);
 
-    // Start uploads
+    // Upload sequential logic
     for (let i = 0; i < rawFiles.length; i++) {
       const file = rawFiles[i];
       const placeholder = newPlaceholders[i];
@@ -45,76 +44,36 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
       updateFileStatus(placeholder.id, 'uploading');
       
       try {
-        // Upload to server
         const serverUrl = await api.uploadVideo(file);
         
-        // Update the item with the real server URL
+        // Si el server devuelve una URL blob (fallback), es "Ready" pero local.
+        // Si devuelve /uploads/..., es "Ready" remoto.
         setFiles(prev => prev.map(item => 
           item.id === placeholder.id ? { ...item, url: serverUrl, driveId: 'uploaded' } : item
         ));
         updateFileStatus(placeholder.id, 'ready');
         
-      } catch (error) {
+      } catch (error: any) {
         console.error("Upload failed", error);
         updateFileStatus(placeholder.id, 'error');
+        setErrorDetails(prev => ({...prev, [placeholder.id]: error.message || "Error desconocido"}));
       }
     }
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    processFiles(e.dataTransfer.files);
-  };
-
-  const handleRemove = (id: string) => {
-    setFiles(prev => prev.filter(v => v.id !== id));
-    const newStatus = { ...fileStatus };
-    delete newStatus[id];
-    setFileStatus(newStatus);
-  };
-
-  const handleUseDemoData = () => {
-    // Demo data uses public internet URLs, so no upload needed
-    setTournamentName("Copa de Cine Demo");
-    setFiles(MOCK_VIDEOS);
-    const statuses: Record<string, 'loading' | 'ready' | 'error' | 'uploading'> = {};
-    MOCK_VIDEOS.forEach(v => statuses[v.id] = 'ready');
-    setFileStatus(statuses);
-  };
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
+  const handleDragLeave = () => { setIsDragging(false); };
+  const handleDrop = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); processFiles(e.dataTransfer.files); };
+  const handleRemove = (id: string) => { setFiles(prev => prev.filter(v => v.id !== id)); };
 
   const handleStart = () => {
-    if (!tournamentName.trim()) {
-      alert("Por favor, ponle un nombre a tu torneo.");
-      return;
-    }
+    if (!tournamentName.trim()) { alert("Ponle un nombre a tu torneo."); return; }
     if (files.length < 2) return;
     
-    // Check if any errors or still uploading
-    const errors = files.filter(f => fileStatus[f.id] === 'error');
-    if (errors.length > 0) {
-      alert(`Elimina los videos con errores antes de continuar.`);
-      return;
-    }
-    
-    const uploading = files.filter(f => fileStatus[f.id] === 'uploading');
-    if (uploading.length > 0) {
-      alert("Espera a que terminen de subirse todos los videos.");
-      return;
-    }
-
+    // Ensure all ready
     const notReady = files.filter(f => fileStatus[f.id] !== 'ready');
     if (notReady.length > 0) {
-      alert("Algunos videos aún no están listos.");
+      alert("Espera a que todos los videos digan 'Listo' o elimina los que tienen error.");
       return;
     }
 
@@ -122,187 +81,79 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
     onPublish(tournamentName.trim(), files);
   };
 
+  const handleUseDemoData = () => {
+     setTournamentName("Demo Local");
+     setFiles(MOCK_VIDEOS);
+     const s: any = {};
+     MOCK_VIDEOS.forEach(v => s[v.id] = 'ready');
+     setFileStatus(s);
+  };
+
   return (
     <div className="flex flex-col items-center justify-start min-h-screen bg-gray-900 text-white p-6 pb-24">
       <div className="w-full max-w-6xl">
-        
         <div className="mb-8 text-center">
-          <div className="inline-flex items-center justify-center p-3 bg-purple-600 rounded-full mb-4 shadow-lg shadow-purple-500/20">
-            <Cloud className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold mb-2">Configuración del Torneo</h1>
-          <p className="text-gray-400 max-w-2xl mx-auto">
-            Sube los videos al servidor. (Máx 3GB por video)
-          </p>
+          <Cloud className="w-12 h-12 text-purple-500 mx-auto mb-2" />
+          <h1 className="text-3xl font-bold">Crear Torneo</h1>
+          <p className="text-gray-400">Sube tus videos. Si el servidor falla, la app usará modo local automáticamente.</p>
         </div>
 
         <div className="max-w-md mx-auto mb-8">
-          <label className="block text-sm font-medium text-gray-300 mb-2">Nombre del Evento</label>
-          <div className="relative">
-            <Trophy className="absolute left-3 top-3.5 w-5 h-5 text-yellow-500" />
-            <input 
-              type="text" 
-              value={tournamentName}
-              onChange={(e) => setTournamentName(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition text-lg"
-              placeholder="Ej. Torneo Verano 2024"
-            />
-          </div>
+          <input 
+            type="text" 
+            value={tournamentName}
+            onChange={(e) => setTournamentName(e.target.value)}
+            className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white text-lg"
+            placeholder="Nombre del Torneo..."
+          />
         </div>
 
         <div 
-          className={`
-            border-2 border-dashed rounded-2xl p-8 mb-8 transition-all cursor-pointer text-center relative overflow-hidden
-            ${isDragging 
-              ? 'border-purple-500 bg-purple-500/10 scale-[1.01]' 
-              : 'border-gray-700 hover:border-gray-500 bg-gray-800'
-            }
-          `}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
+          className={`border-2 border-dashed rounded-2xl p-8 mb-8 text-center cursor-pointer ${isDragging ? 'border-purple-500 bg-purple-900/20' : 'border-gray-700 bg-gray-800'}`}
           onClick={() => fileInputRef.current?.click()}
+          onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
         >
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            className="hidden" 
-            multiple 
-            accept="video/*" 
-            onChange={(e) => processFiles(e.target.files)} 
-          />
-          
-          <div className="flex flex-col items-center gap-4 relative z-10">
-            <div className="p-4 bg-gray-700 rounded-full">
-              <Upload className="w-8 h-8 text-gray-300" />
-            </div>
-            <div>
-              <p className="text-lg font-medium text-white">Haz clic o arrastra archivos de video aquí</p>
-              <p className="text-sm text-gray-500 mt-1">Se guardarán temporalmente en el servidor</p>
-            </div>
-          </div>
+          <input type="file" ref={fileInputRef} className="hidden" multiple accept="video/*" onChange={(e) => processFiles(e.target.files)} />
+          <Upload className="w-8 h-8 mx-auto text-gray-400 mb-2" />
+          <p>Click o Arrastrar videos aquí</p>
         </div>
+        
+        {files.length === 0 && (
+           <button onClick={handleUseDemoData} className="block mx-auto text-sm text-gray-500 underline mb-8">Cargar Datos de Demo</button>
+        )}
 
-        <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-          <h2 className="text-xl font-bold flex items-center gap-2">
-            <FileVideo className="w-5 h-5 text-purple-400" />
-            Galería ({files.length})
-          </h2>
-          
-          <div className="flex gap-3">
-             {files.length === 0 && (
-               <button 
-                 onClick={handleUseDemoData}
-                 className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm text-gray-300 transition border border-gray-700 flex items-center gap-2"
-               >
-                 <PlayCircle className="w-4 h-4" />
-                 Cargar Demo
-               </button>
-             )}
-             {files.length > 0 && (
-                <button 
-                  onClick={() => setFiles([])}
-                  className="px-4 py-2 bg-red-900/30 hover:bg-red-900/50 text-red-400 rounded-lg text-sm transition border border-red-900/50"
-                >
-                  Limpiar Todo
-                </button>
-             )}
-          </div>
-        </div>
-
-        {/* Video Grid */}
-        {files.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-12 bg-gray-800/50 rounded-xl border border-gray-700/50 text-gray-500 border-dashed">
-              <FileVideo className="w-16 h-16 mb-4 opacity-20" />
-              <p>Tu galería está vacía.</p>
-            </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-24">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-24">
             {files.map((file, index) => (
-              <div 
-                key={file.id} 
-                className={`relative group bg-gray-800 rounded-xl overflow-hidden border transition-all hover:shadow-xl ${
-                  fileStatus[file.id] === 'error' ? 'border-red-500' : 'border-gray-700'
-                }`}
-              >
+              <div key={file.id} className={`relative bg-gray-800 rounded-xl overflow-hidden border ${fileStatus[file.id] === 'error' ? 'border-red-500' : 'border-gray-700'}`}>
                 <div className="absolute top-2 left-2 z-20 flex gap-2">
-                  <div className="bg-black/80 backdrop-blur text-white text-xs font-bold px-2 py-1 rounded">
-                    #{index + 1}
-                  </div>
-                  {fileStatus[file.id] === 'uploading' && (
-                    <div className="bg-blue-500 text-white text-xs font-bold px-2 py-1 rounded flex items-center gap-1 animate-pulse">
-                      <Loader2 className="w-3 h-3 animate-spin" /> Subiendo...
-                    </div>
-                  )}
-                  {fileStatus[file.id] === 'error' && (
-                    <div className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" /> Error
-                    </div>
-                  )}
-                  {fileStatus[file.id] === 'ready' && (
-                    <div className="bg-green-500/80 text-white text-xs font-bold px-2 py-1 rounded flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3" /> Listo
-                    </div>
-                  )}
+                   {fileStatus[file.id] === 'uploading' && <span className="bg-blue-600 text-xs px-2 py-1 rounded text-white">Subiendo...</span>}
+                   {fileStatus[file.id] === 'ready' && <span className="bg-green-600 text-xs px-2 py-1 rounded text-white">Listo</span>}
+                   {fileStatus[file.id] === 'error' && <span className="bg-red-600 text-xs px-2 py-1 rounded text-white">Error</span>}
                 </div>
-
-                <button 
-                  onClick={() => handleRemove(file.id)}
-                  className="absolute top-2 right-2 z-20 p-2 bg-black/60 hover:bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all backdrop-blur"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-
-                <div className="aspect-video bg-black relative">
-                  <video 
-                    src={file.url} 
-                    className="w-full h-full object-contain"
-                    controls
-                    preload="metadata"
-                    // REMOVED: onLoadedMetadata no longer controls 'ready' status. 
-                    // Status is only controlled by the upload API response.
-                    onError={() => {
-                        // Only error if we aren't uploading (i.e. if preview failed)
-                        if (fileStatus[file.id] !== 'uploading') {
-                           // Optional: visual feedback for broken preview, but don't fail the upload logic
-                        }
-                    }}
-                  />
+                <button onClick={() => handleRemove(file.id)} className="absolute top-2 right-2 z-20 bg-black/50 p-1 rounded-full hover:bg-red-600 text-white"><Trash2 size={16}/></button>
+                
+                <div className="aspect-video bg-black">
+                   <video src={file.url} className="w-full h-full object-contain" controls />
                 </div>
-
-                <div className="p-4">
-                  <h3 className="font-medium text-white truncate text-sm mb-1">
-                    {file.title}
-                  </h3>
+                <div className="p-3">
+                   <p className="truncate text-sm font-bold">{file.title}</p>
+                   {fileStatus[file.id] === 'error' && (
+                     <p className="text-xs text-red-400 mt-1">{errorDetails[file.id]}</p>
+                   )}
                 </div>
               </div>
             ))}
-          </div>
-        )}
+        </div>
 
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-gray-900/90 backdrop-blur border-t border-gray-800 z-50 flex justify-center">
-          <button
-            onClick={handleStart}
-            disabled={isPublishing || files.length < 2 || !tournamentName.trim()}
-            className={`
-              w-full max-w-md py-3 px-6 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all transform shadow-lg
-              ${files.length >= 2 && tournamentName.trim() && !isPublishing
-                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:scale-[1.02] text-white' 
-                : 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700'
-              }
-            `}
-          >
-            {isPublishing ? (
-               <><Loader2 className="w-5 h-5 animate-spin" /> Creando...</>
-            ) : files.length < 2 ? (
-              <>Sube al menos 2 videos</>
-            ) : (
-              <>
-                Publicar y Obtener Código
-                <Share2 className="w-5 h-5" />
-              </>
-            )}
-          </button>
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-gray-900 border-t border-gray-800 flex justify-center z-50">
+           <button
+             onClick={handleStart}
+             disabled={isPublishing || files.length < 2}
+             className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 text-white font-bold py-3 px-8 rounded-xl flex items-center gap-2"
+           >
+             {isPublishing ? <Loader2 className="animate-spin"/> : <Share2 />}
+             {isPublishing ? 'Publicando...' : 'Publicar Torneo'}
+           </button>
         </div>
       </div>
     </div>
