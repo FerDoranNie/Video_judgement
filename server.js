@@ -52,24 +52,26 @@ const tournaments = {};
 app.get('/api/health', (req, res) => res.send('OK'));
 
 app.post('/api/upload', (req, res) => {
+  console.log(`[Upload] Starting upload for file: ${req.headers['content-length']} bytes`);
   const uploadSingle = upload.single('video');
 
   uploadSingle(req, res, function (err) {
     if (err instanceof multer.MulterError) {
-      console.error("Multer Error:", err);
+      console.error("[Upload] Multer Error:", err);
       return res.status(500).json({ error: err.message });
     } else if (err) {
-      console.error("Unknown Upload Error:", err);
+      console.error("[Upload] Unknown Error:", err);
       return res.status(500).json({ error: "Unknown upload error" });
     }
 
     if (!req.file) {
+      console.error("[Upload] No file received");
       return res.status(400).json({ error: 'No video file provided' });
     }
     
+    console.log(`[Upload] Success: ${req.file.filename}`);
+    
     // Devolvemos la URL relativa. En el frontend se puede usar directamente.
-    // Importante: Cloud Run a veces requiere la URL completa si hay proxies, 
-    // pero relativa suele funcionar mejor.
     const publicUrl = `/uploads/${req.file.filename}`;
     res.json({ 
       url: publicUrl, 
@@ -81,6 +83,7 @@ app.post('/api/upload', (req, res) => {
 app.post('/api/tournaments', (req, res) => {
   try {
     const { name, hostId, videos } = req.body;
+    console.log(`[Tournament] Creating tournament: ${name}`);
     const code = Math.random().toString(36).substring(2, 7).toUpperCase();
     
     tournaments[code] = {
@@ -91,8 +94,10 @@ app.post('/api/tournaments', (req, res) => {
       createdAt: Date.now(),
       votes: [] 
     };
+    console.log(`[Tournament] Created with code: ${code}`);
     res.json(tournaments[code]);
   } catch (e) {
+    console.error("[Tournament] Create Error", e);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
@@ -141,6 +146,7 @@ const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 
+// Timeout settings for slow uploads (3GB support)
 server.keepAliveTimeout = 3600000;
 server.headersTimeout = 3600000;
 server.timeout = 3600000;

@@ -29,7 +29,7 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
     const newPlaceholders: VideoItem[] = rawFiles.map(file => ({
       id: crypto.randomUUID(),
       title: file.name.replace(/\.[^/.]+$/, ""),
-      url: URL.createObjectURL(file), // Preview local temporal
+      url: '', // Init empty to avoid premature ready state from local blobs
       thumbnail: '',
       driveId: 'pending'
     }));
@@ -46,7 +46,7 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
       try {
         const serverUrl = await api.uploadVideo(file);
         
-        // Actualizamos con la URL real del servidor
+        // Actualizamos con la URL real (o fallback)
         setFiles(prev => prev.map(item => 
           item.id === placeholder.id ? { ...item, url: serverUrl, driveId: 'uploaded' } : item
         ));
@@ -55,7 +55,9 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
       } catch (error: any) {
         console.error("Upload failed", error);
         updateFileStatus(placeholder.id, 'error');
-        setErrorDetails(prev => ({...prev, [placeholder.id]: "Falló la subida. Verifica tu conexión."}));
+        // Show specific error for debugging
+        const errorMsg = error.message || "Unknown Error";
+        setErrorDetails(prev => ({...prev, [placeholder.id]: errorMsg}));
       }
     }
   };
@@ -76,13 +78,13 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
       return;
     }
 
-    // VALIDACIÓN CRÍTICA:
-    // Si algún video tiene una URL que empieza con "blob:", significa que es local
-    // y no se subió correctamente al servidor.
+    // Checking if any are using local blobs (fallback mode)
     const localVideos = files.filter(f => f.url.startsWith('blob:'));
     if (localVideos.length > 0) {
-      alert(`Error Crítico: ${localVideos.length} videos no se subieron al servidor correctamente (son locales). Tus invitados NO podrán verlos. Por favor elimínalos y súbelos de nuevo.`);
-      return;
+      const confirmLocal = window.confirm(
+        `Advertencia: ${localVideos.length} videos están usando modo 'local' (posiblemente porque falló el servidor). \n\nSi publicas ahora, los invitados en otros dispositivos NO podrán ver estos videos. \n\n¿Quieres publicar de todos modos para probar localmente?`
+      );
+      if (!confirmLocal) return;
     }
 
     setIsPublishing(true);
@@ -135,18 +137,28 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
               <div key={file.id} className={`relative bg-gray-800 rounded-xl overflow-hidden border ${fileStatus[file.id] === 'error' ? 'border-red-500' : 'border-gray-700'}`}>
                 <div className="absolute top-2 left-2 z-20 flex gap-2">
                    {fileStatus[file.id] === 'uploading' && <span className="bg-blue-600 text-xs px-2 py-1 rounded text-white animate-pulse">Subiendo...</span>}
-                   {fileStatus[file.id] === 'ready' && <span className="bg-green-600 text-xs px-2 py-1 rounded text-white">Listo (Nube)</span>}
+                   {fileStatus[file.id] === 'ready' && <span className="bg-green-600 text-xs px-2 py-1 rounded text-white">Listo</span>}
                    {fileStatus[file.id] === 'error' && <span className="bg-red-600 text-xs px-2 py-1 rounded text-white">Error</span>}
                 </div>
                 <button onClick={() => handleRemove(file.id)} className="absolute top-2 right-2 z-20 bg-black/50 p-1 rounded-full hover:bg-red-600 text-white"><Trash2 size={16}/></button>
                 
-                <div className="aspect-video bg-black">
-                   <video src={file.url} className="w-full h-full object-contain" controls />
+                <div className="aspect-video bg-black flex items-center justify-center">
+                   {file.url ? (
+                      <video src={file.url} className="w-full h-full object-contain" controls />
+                   ) : (
+                      <div className="text-gray-500 flex flex-col items-center">
+                         {fileStatus[file.id] === 'uploading' ? <Loader2 className="animate-spin mb-2"/> : <FileVideo />}
+                         <span className="text-xs">{fileStatus[file.id] === 'uploading' ? 'Procesando...' : 'Esperando...'}</span>
+                      </div>
+                   )}
                 </div>
                 <div className="p-3">
                    <p className="truncate text-sm font-bold">{file.title}</p>
                    {fileStatus[file.id] === 'error' && (
                      <p className="text-xs text-red-400 mt-1">{errorDetails[file.id]}</p>
+                   )}
+                   {file.url && file.url.startsWith('blob:') && (
+                      <p className="text-xs text-yellow-500 mt-1 flex items-center gap-1"><AlertCircle size={10}/> Modo Local (Demo)</p>
                    )}
                 </div>
               </div>
