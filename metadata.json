@@ -1,5 +1,5 @@
 {
-  "name": "Juez de Videos IA",
-  "description": "Una aplicación estilo Tinder para juzgar videos, donde los usuarios votan pares de videos en un torneo hasta determinar el top 10, con comentarios de Gemini AI.",
+  "name": "Juez de Videos",
+  "description": "Una aplicación estilo Tinder para juzgar videos, donde los usuarios votan pares de videos en un torneo hasta determinar el top 10.",
   "requestFramePermissions": []
 }

@@ -1,22 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { User, VideoItem, VoteRecord, Tournament } from './types';
 import AuthScreen from './components/AuthScreen';
 import UploadScreen from './components/UploadScreen';
 import VotingArena from './components/VotingArena';
 import ResultsScreen from './components/ResultsScreen';
 import TournamentLobby from './components/TournamentLobby';
-
-// Key for persisting tournaments dictionary
-const TOURNAMENTS_STORAGE_KEY = 'juez_videos_tournaments';
+import { api } from './services/api';
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
-  
-  // The full dictionary of tournaments loaded from storage
-  const [tournaments, setTournaments] = useState<Record<string, Tournament>>({});
-  
-  // The ID of the currently active tournament
-  const [activeTournamentId, setActiveTournamentId] = useState<string | null>(null);
+  const [tournament, setTournament] = useState<Tournament | null>(null);
   
   // Videos active in the current user's session (shuffled copy of the tournament pool)
   const [sessionVideos, setSessionVideos] = useState<VideoItem[]>([]);
@@ -27,25 +20,7 @@ function App() {
   const [votingComplete, setVotingComplete] = useState(false);
   const [winner, setWinner] = useState<VideoItem | null>(null);
   const [voteHistory, setVoteHistory] = useState<VoteRecord[]>([]);
-
-  // Load existing tournaments on mount
-  useEffect(() => {
-    const saved = localStorage.getItem(TOURNAMENTS_STORAGE_KEY);
-    if (saved) {
-      try {
-        setTournaments(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to load tournaments", e);
-      }
-    }
-  }, []);
-
-  // Save tournaments whenever they change
-  useEffect(() => {
-    if (Object.keys(tournaments).length > 0) {
-      localStorage.setItem(TOURNAMENTS_STORAGE_KEY, JSON.stringify(tournaments));
-    }
-  }, [tournaments]);
+  const [loading, setLoading] = useState(false);
 
   // Shuffle logic
   const shuffleVideos = (array: VideoItem[]) => {
@@ -57,53 +32,51 @@ function App() {
     return newArray;
   };
 
-  const handleLogin = (userData: User, tournamentCode?: string) => {
+  const handleLogin = async (userData: User, tournamentCode?: string) => {
     if (userData.role === 'guest') {
-      // Validate Code
-      if (!tournamentCode || !tournaments[tournamentCode]) {
-        alert("Error: Código de torneo no válido o no encontrado.");
+      if (!tournamentCode) {
+        alert("Error: Código de torneo requerido.");
         return;
       }
       
-      const tournament = tournaments[tournamentCode];
-      setUser(userData);
-      setActiveTournamentId(tournament.id);
-      setSessionVideos(shuffleVideos(tournament.videos));
+      setLoading(true);
+      try {
+        const t = await api.getTournament(tournamentCode);
+        setTournament(t);
+        setUser(userData);
+        setSessionVideos(shuffleVideos(t.videos));
+      } catch (e) {
+        alert("No se encontró el torneo. Verifica el código.");
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
       
     } else {
       // Admin Login
       setUser(userData);
       // Admin starts without a tournament, needs to create one
-      setActiveTournamentId(null); 
+      setTournament(null); 
     }
   };
 
-  const handleAdminPublish = (name: string, uploadedVideos: VideoItem[]) => {
-    // Generate a simple 5-char code (e.g., A7X2P)
-    const code = Math.random().toString(36).substring(2, 7).toUpperCase();
-    
-    const newTournament: Tournament = {
-      id: code,
-      name: name,
-      hostId: user?.id || 'admin',
-      videos: uploadedVideos,
-      createdAt: Date.now()
-    };
-
-    // Save to state (which triggers LS save)
-    setTournaments(prev => ({
-      ...prev,
-      [code]: newTournament
-    }));
-
-    setActiveTournamentId(code);
-    setShowLobby(true); // Show the share code screen
+  const handleAdminPublish = async (name: string, uploadedVideos: VideoItem[]) => {
+    setLoading(true);
+    try {
+      const newTournament = await api.createTournament(name, user?.id || 'admin', uploadedVideos);
+      setTournament(newTournament);
+      setShowLobby(true);
+    } catch (e) {
+      alert("Error al crear el torneo. Intenta de nuevo.");
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleStartVotingFromLobby = () => {
-    if (activeTournamentId && tournaments[activeTournamentId]) {
-      const t = tournaments[activeTournamentId];
-      setSessionVideos(shuffleVideos(t.videos));
+    if (tournament) {
+      setSessionVideos(shuffleVideos(tournament.videos));
       setShowLobby(false);
     }
   };
@@ -116,6 +89,14 @@ function App() {
 
   // --- RENDER FLOW ---
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500 mb-4"></div>
+      </div>
+    );
+  }
+
   // 1. Auth Step
   if (!user) {
     return (
@@ -126,44 +107,46 @@ function App() {
   }
 
   // 2. Upload/Creation Step (Only for Admin if no active tournament yet)
-  if (user.role === 'admin' && !activeTournamentId) {
+  if (user.role === 'admin' && !tournament) {
     return <UploadScreen onPublish={handleAdminPublish} />;
   }
 
   // 3. Lobby (Admin only, right after creation)
-  if (user.role === 'admin' && showLobby && activeTournamentId) {
+  if (user.role === 'admin' && showLobby && tournament) {
     return (
       <TournamentLobby 
-        tournament={tournaments[activeTournamentId]} 
+        tournament={tournament} 
         onStartVoting={handleStartVotingFromLobby} 
       />
     );
   }
 
   // 5. Results Step
-  if (votingComplete && winner) {
+  if (votingComplete && winner && tournament) {
     return (
       <ResultsScreen 
         winner={winner} 
         history={voteHistory} 
-        allVideos={sessionVideos} // Pass the full original list for stats
+        allVideos={sessionVideos} // Pass session videos for local context, or tournament.videos for global
+        tournamentCode={tournament.id}
       />
     );
   }
 
   // 4. Voting Step
-  if (sessionVideos.length > 0) {
+  if (sessionVideos.length > 0 && tournament) {
     return (
       <VotingArena 
         videos={sessionVideos} 
         userId={user.id} 
+        tournamentCode={tournament.id}
         onComplete={handleVotingComplete} 
       />
     );
   }
 
   // Fallback
-  return <div className="text-white p-10">Cargando...</div>;
+  return <div className="text-white p-10">Cargando aplicación...</div>;
 }
 
 export default App;

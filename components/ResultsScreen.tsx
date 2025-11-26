@@ -1,20 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { VideoItem, VoteRecord } from '../types';
-import { Trophy, Share2, Sparkles, FileSpreadsheet, Cloud } from 'lucide-react';
-import { generateTop10Summary } from '../services/geminiService';
+import { Trophy, Share2, Cloud } from 'lucide-react';
 
 interface ResultsScreenProps {
   winner: VideoItem;
   history: VoteRecord[];
   allVideos: VideoItem[];
+  tournamentCode: string;
 }
 
-const ResultsScreen: React.FC<ResultsScreenProps> = ({ winner, history, allVideos }) => {
+const ResultsScreen: React.FC<ResultsScreenProps> = ({ winner, history, allVideos, tournamentCode }) => {
   const [top10, setTop10] = useState<VideoItem[]>([]);
-  const [aiSummary, setAiSummary] = useState<string>('Generando análisis de la IA...');
   
   useEffect(() => {
-    // Calculate Rankings based on "Wins"
+    // Calculate Rankings based on "Wins" locally
     const winCounts: Record<string, number> = {};
     allVideos.forEach(v => winCounts[v.id] = 0);
     
@@ -31,18 +30,14 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ winner, history, allVideo
       return winsB - winsA;
     });
 
-    // Ensure the actual tournament winner is #1
+    // Ensure the actual tournament winner is #1 locally
     const finalSorted = [
       winner, 
       ...sorted.filter(v => v.id !== winner.id)
     ].slice(0, 10);
 
     setTop10(finalSorted);
-
-    // Call AI Summary
-    generateTop10Summary(finalSorted, history.length).then(setAiSummary);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [winner, history]);
+  }, [winner, history, allVideos]);
 
   const exportToSheets = () => {
     // Mocking the Google Sheets CSV structure
@@ -59,12 +54,12 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ winner, history, allVideo
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "resultados_torneo.csv");
+    link.setAttribute("download", `resultados_${tournamentCode}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     
-    alert("¡Resultados exportados! Esto simula guardar en tu carpeta pública de Google Sheets.");
+    alert("Resultados descargados en CSV.");
   };
 
   return (
@@ -77,9 +72,9 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ winner, history, allVideo
              <Trophy className="w-12 h-12 text-black" />
           </div>
           <h1 className="text-4xl font-black mb-2 bg-clip-text text-transparent bg-gradient-to-r from-yellow-400 to-orange-500">
-            Torneo Completado
+            ¡Ganador Elegido!
           </h1>
-          <p className="text-gray-400">Los jueces han dictado sentencia.</p>
+          <p className="text-gray-400">Tu veredicto personal ha sido registrado.</p>
         </div>
 
         {/* Winner Showcase */}
@@ -92,26 +87,15 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ winner, history, allVideo
            </div>
            <div className="p-6">
              <h2 className="text-2xl font-bold mb-2">{winner.title}</h2>
-             <p className="text-gray-400">Ganador indiscutible del torneo.</p>
+             <p className="text-gray-400">Ganador de tu bracket personal.</p>
            </div>
-        </div>
-
-        {/* AI Summary */}
-        <div className="bg-indigo-900/30 border border-indigo-500/30 rounded-xl p-6 mb-8">
-          <div className="flex items-center gap-2 mb-3">
-            <Sparkles className="w-5 h-5 text-indigo-400" />
-            <h3 className="font-bold text-indigo-300">Análisis del Juez Gemini</h3>
-          </div>
-          <p className="text-gray-200 leading-relaxed italic">
-            "{aiSummary}"
-          </p>
         </div>
 
         {/* Top 10 List */}
         <div className="bg-gray-800 rounded-2xl shadow-xl border border-gray-700 overflow-hidden mb-8">
           <div className="p-6 border-b border-gray-700 flex justify-between items-center">
-            <h3 className="text-xl font-bold">Top 10 Clasificación</h3>
-            <span className="text-sm text-gray-500">Ordenado por Victorias</span>
+            <h3 className="text-xl font-bold">Tu Top 10</h3>
+            <span className="text-sm text-gray-500">Basado en tus duelos</span>
           </div>
           <div className="divide-y divide-gray-700">
             {top10.map((video, index) => (
@@ -119,24 +103,12 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ winner, history, allVideo
                 <div className={`w-8 h-8 flex items-center justify-center rounded-full font-bold ${index === 0 ? 'bg-yellow-500 text-black' : index < 3 ? 'bg-gray-600 text-white' : 'bg-gray-800 text-gray-500 border border-gray-700'}`}>
                   {index + 1}
                 </div>
-                {video.thumbnail ? (
-                  <img 
-                    src={video.thumbnail} 
-                    alt={video.title} 
-                    className="w-16 h-12 object-cover rounded bg-gray-900"
-                  />
-                ) : (
-                  <div className="w-16 h-12 bg-black rounded flex items-center justify-center">
-                     <span className="text-xs text-gray-600">VIDEO</span>
-                  </div>
-                )}
                 <div className="flex-1">
                   <h4 className="font-medium text-white">{video.title}</h4>
-                  <p className="text-xs text-gray-500">ID: {video.id}</p>
                 </div>
                 <div className="text-right">
                    <span className="block font-bold text-indigo-400">
-                     {history.filter(h => h.winnerId === video.id).length} Victorias
+                     {history.filter(h => h.winnerId === video.id).length} Wins
                    </span>
                 </div>
               </div>
@@ -151,14 +123,14 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ winner, history, allVideo
             className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition"
           >
             <Cloud className="w-5 h-5" />
-            Guardar en Drive (CSV)
+            Descargar mis Resultados
           </button>
           <button 
              onClick={() => window.location.reload()}
              className="flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg transition"
           >
             <Share2 className="w-5 h-5" />
-            Nueva Sesión
+            Volver al Inicio
           </button>
         </div>
 

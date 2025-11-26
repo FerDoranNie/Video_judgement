@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { VideoItem } from '../types';
 import { Upload, FileVideo, Trash2, Cloud, PlayCircle, Loader2, Share2, CheckCircle2, AlertCircle, Trophy } from 'lucide-react';
 import { MOCK_VIDEOS } from '../services/mockData';
+import { api } from '../services/api';
 
 interface UploadScreenProps {
   onPublish: (name: string, videos: VideoItem[]) => void;
@@ -10,34 +11,54 @@ interface UploadScreenProps {
 const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
   const [tournamentName, setTournamentName] = useState('');
   const [files, setFiles] = useState<VideoItem[]>([]);
-  const [fileStatus, setFileStatus] = useState<Record<string, 'loading' | 'ready' | 'error'>>({});
+  const [fileStatus, setFileStatus] = useState<Record<string, 'loading' | 'ready' | 'error' | 'uploading'>>({});
   const [isDragging, setIsDragging] = useState(false);
-  const [isLoadingMock, setIsLoadingMock] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const updateFileStatus = (id: string, status: 'loading' | 'ready' | 'error') => {
+  const updateFileStatus = (id: string, status: 'loading' | 'ready' | 'error' | 'uploading') => {
     setFileStatus(prev => ({ ...prev, [id]: status }));
   };
 
-  const processFiles = (fileList: FileList | null) => {
+  const processFiles = async (fileList: FileList | null) => {
     if (!fileList) return;
 
-    const newVideos: VideoItem[] = Array.from(fileList)
-      .filter(file => file.type.startsWith('video/'))
-      .map(file => {
-        const id = crypto.randomUUID();
-        // Initialize status as ready for local files
-        updateFileStatus(id, 'ready'); 
-        return {
-          id: id,
-          title: file.name.replace(/\.[^/.]+$/, ""), // Remove extension
-          url: URL.createObjectURL(file),
-          thumbnail: '', 
-          driveId: 'pending_upload'
-        };
-      });
+    // Convert FileList to array
+    const rawFiles = Array.from(fileList).filter(file => file.type.startsWith('video/'));
+    
+    // Create placeholders immediately for UI feedback
+    const newPlaceholders: VideoItem[] = rawFiles.map(file => ({
+      id: crypto.randomUUID(),
+      title: file.name.replace(/\.[^/.]+$/, ""),
+      url: URL.createObjectURL(file), // Temporary local blob for preview
+      thumbnail: '',
+      driveId: 'pending' // Flag
+    }));
 
-    setFiles(prev => [...prev, ...newVideos]);
+    setFiles(prev => [...prev, ...newPlaceholders]);
+
+    // Start uploads
+    for (let i = 0; i < rawFiles.length; i++) {
+      const file = rawFiles[i];
+      const placeholder = newPlaceholders[i];
+      
+      updateFileStatus(placeholder.id, 'uploading');
+      
+      try {
+        // Upload to server
+        const serverUrl = await api.uploadVideo(file);
+        
+        // Update the item with the real server URL
+        setFiles(prev => prev.map(item => 
+          item.id === placeholder.id ? { ...item, url: serverUrl, driveId: 'uploaded' } : item
+        ));
+        updateFileStatus(placeholder.id, 'ready');
+        
+      } catch (error) {
+        console.error("Upload failed", error);
+        updateFileStatus(placeholder.id, 'error');
+      }
+    }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -63,15 +84,12 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
   };
 
   const handleUseDemoData = () => {
-    setIsLoadingMock(true);
-    setTimeout(() => {
-      setTournamentName("Copa de Cine IA");
-      setFiles(MOCK_VIDEOS);
-      const statuses: Record<string, 'loading' | 'ready' | 'error'> = {};
-      MOCK_VIDEOS.forEach(v => statuses[v.id] = 'ready');
-      setFileStatus(statuses);
-      setIsLoadingMock(false);
-    }, 800);
+    // Demo data uses public internet URLs, so no upload needed
+    setTournamentName("Copa de Cine Demo");
+    setFiles(MOCK_VIDEOS);
+    const statuses: Record<string, 'loading' | 'ready' | 'error' | 'uploading'> = {};
+    MOCK_VIDEOS.forEach(v => statuses[v.id] = 'ready');
+    setFileStatus(statuses);
   };
 
   const handleStart = () => {
@@ -81,13 +99,20 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
     }
     if (files.length < 2) return;
     
-    // Check if any errors
+    // Check if any errors or still uploading
     const errors = files.filter(f => fileStatus[f.id] === 'error');
     if (errors.length > 0) {
-      alert(`¡Atención! Hay ${errors.length} videos con errores. Elimínalos antes de continuar.`);
+      alert(`Elimina los videos con errores antes de continuar.`);
+      return;
+    }
+    
+    const uploading = files.filter(f => fileStatus[f.id] === 'uploading');
+    if (uploading.length > 0) {
+      alert("Espera a que terminen de subirse todos los videos.");
       return;
     }
 
+    setIsPublishing(true);
     onPublish(tournamentName.trim(), files);
   };
 
@@ -95,18 +120,16 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
     <div className="flex flex-col items-center justify-start min-h-screen bg-gray-900 text-white p-6 pb-24">
       <div className="w-full max-w-6xl">
         
-        {/* Header */}
         <div className="mb-8 text-center">
           <div className="inline-flex items-center justify-center p-3 bg-purple-600 rounded-full mb-4 shadow-lg shadow-purple-500/20">
             <Cloud className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold mb-2">Configuración del Torneo</h1>
           <p className="text-gray-400 max-w-2xl mx-auto">
-            Dale un nombre a tu evento y sube los videos participantes.
+            Sube los videos al servidor.
           </p>
         </div>
 
-        {/* Tournament Name Input */}
         <div className="max-w-md mx-auto mb-8">
           <label className="block text-sm font-medium text-gray-300 mb-2">Nombre del Evento</label>
           <div className="relative">
@@ -116,12 +139,11 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
               value={tournamentName}
               onChange={(e) => setTournamentName(e.target.value)}
               className="w-full pl-10 pr-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition text-lg"
-              placeholder="Ej. Mejores Bloopers 2024"
+              placeholder="Ej. Torneo Verano 2024"
             />
           </div>
         </div>
 
-        {/* Upload Zone */}
         <div 
           className={`
             border-2 border-dashed rounded-2xl p-8 mb-8 transition-all cursor-pointer text-center relative overflow-hidden
@@ -150,26 +172,24 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
             </div>
             <div>
               <p className="text-lg font-medium text-white">Haz clic o arrastra archivos de video aquí</p>
-              <p className="text-sm text-gray-500 mt-1">Formatos recomendados: MP4 (H.264)</p>
+              <p className="text-sm text-gray-500 mt-1">Se subirán automáticamente al servidor</p>
             </div>
           </div>
         </div>
 
-        {/* Toolbar */}
         <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
           <h2 className="text-xl font-bold flex items-center gap-2">
             <FileVideo className="w-5 h-5 text-purple-400" />
-            Galería de Videos ({files.length})
+            Galería ({files.length})
           </h2>
           
           <div className="flex gap-3">
              {files.length === 0 && (
                <button 
                  onClick={handleUseDemoData}
-                 disabled={isLoadingMock}
                  className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm text-gray-300 transition border border-gray-700 flex items-center gap-2"
                >
-                 {isLoadingMock ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />}
+                 <PlayCircle className="w-4 h-4" />
                  Cargar Demo
                </button>
              )}
@@ -196,14 +216,18 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
               <div 
                 key={file.id} 
                 className={`relative group bg-gray-800 rounded-xl overflow-hidden border transition-all hover:shadow-xl ${
-                  fileStatus[file.id] === 'error' ? 'border-red-500' : 'border-gray-700 hover:border-indigo-500'
+                  fileStatus[file.id] === 'error' ? 'border-red-500' : 'border-gray-700'
                 }`}
               >
-                {/* Status Badge */}
                 <div className="absolute top-2 left-2 z-20 flex gap-2">
                   <div className="bg-black/80 backdrop-blur text-white text-xs font-bold px-2 py-1 rounded">
                     #{index + 1}
                   </div>
+                  {fileStatus[file.id] === 'uploading' && (
+                    <div className="bg-blue-500 text-white text-xs font-bold px-2 py-1 rounded flex items-center gap-1 animate-pulse">
+                      <Loader2 className="w-3 h-3 animate-spin" /> Subiendo...
+                    </div>
+                  )}
                   {fileStatus[file.id] === 'error' && (
                     <div className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded flex items-center gap-1">
                       <AlertCircle className="w-3 h-3" /> Error
@@ -216,61 +240,55 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
                   )}
                 </div>
 
-                {/* Remove Button */}
                 <button 
                   onClick={() => handleRemove(file.id)}
                   className="absolute top-2 right-2 z-20 p-2 bg-black/60 hover:bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all backdrop-blur"
-                  title="Eliminar video"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
 
-                {/* Video Player */}
                 <div className="aspect-video bg-black relative">
                   <video 
                     src={file.url} 
                     className="w-full h-full object-contain"
                     controls
                     preload="metadata"
-                    onLoadedMetadata={() => updateFileStatus(file.id, 'ready')}
+                    onLoadedMetadata={() => {
+                        if (fileStatus[file.id] !== 'ready') updateFileStatus(file.id, 'ready');
+                    }}
                     onError={() => updateFileStatus(file.id, 'error')}
                   />
                 </div>
 
-                {/* Info */}
                 <div className="p-4">
-                  <h3 className="font-medium text-white truncate text-sm mb-1" title={file.title}>
+                  <h3 className="font-medium text-white truncate text-sm mb-1">
                     {file.title}
                   </h3>
-                  <p className="text-xs text-gray-500 flex justify-between">
-                    <span>ID: {file.id.slice(0, 8)}...</span>
-                  </p>
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {/* Publish Button */}
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-gray-900/90 backdrop-blur border-t border-gray-800 z-50 flex justify-center">
           <button
             onClick={handleStart}
-            disabled={files.length < 2 || !tournamentName.trim()}
+            disabled={isPublishing || files.length < 2 || !tournamentName.trim()}
             className={`
               w-full max-w-md py-3 px-6 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all transform shadow-lg
-              ${files.length >= 2 && tournamentName.trim()
-                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:scale-[1.02] hover:shadow-purple-500/25 text-white' 
+              ${files.length >= 2 && tournamentName.trim() && !isPublishing
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:scale-[1.02] text-white' 
                 : 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700'
               }
             `}
           >
-            {files.length < 2 ? (
+            {isPublishing ? (
+               <><Loader2 className="w-5 h-5 animate-spin" /> Creando...</>
+            ) : files.length < 2 ? (
               <>Sube al menos 2 videos</>
-            ) : !tournamentName.trim() ? (
-              <>Escribe un nombre al torneo</>
             ) : (
               <>
-                Crear Torneo y Obtener Código
+                Publicar y Obtener Código
                 <Share2 className="w-5 h-5" />
               </>
             )}

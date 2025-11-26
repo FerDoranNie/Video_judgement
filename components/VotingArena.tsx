@@ -1,23 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { VideoItem, Matchup, VoteRecord } from '../types';
 import VideoCard from './VideoCard';
-import { Swords, AlertCircle } from 'lucide-react';
-import { generateJudgeCommentary } from '../services/geminiService';
+import { Swords } from 'lucide-react';
+import { api } from '../services/api';
 
 interface VotingArenaProps {
   videos: VideoItem[];
   userId: string;
+  tournamentCode: string;
   onComplete: (winners: VideoItem[], history: VoteRecord[]) => void;
 }
 
-const VotingArena: React.FC<VotingArenaProps> = ({ videos, userId, onComplete }) => {
+const VotingArena: React.FC<VotingArenaProps> = ({ videos, userId, tournamentCode, onComplete }) => {
   // Game State
   const [currentPool, setCurrentPool] = useState<VideoItem[]>(videos);
   const [nextRoundPool, setNextRoundPool] = useState<VideoItem[]>([]);
   const [currentMatchup, setCurrentMatchup] = useState<Matchup | null>(null);
   const [round, setRound] = useState(1);
   const [history, setHistory] = useState<VoteRecord[]>([]);
-  const [commentary, setCommentary] = useState<string>('');
   const [isAnimating, setIsAnimating] = useState(false);
   
   // Initialize first matchup
@@ -66,16 +66,12 @@ const VotingArena: React.FC<VotingArenaProps> = ({ videos, userId, onComplete })
     setCurrentPool(survivors);
     setNextRoundPool([]);
     setCurrentMatchup(null);
-    setCommentary('');
   };
 
   const handleVote = async (winner: VideoItem, loser: VideoItem) => {
     if (isAnimating || !currentMatchup) return;
     
     setIsAnimating(true);
-
-    // AI Commentary (Fire and forget)
-    generateJudgeCommentary(winner, loser, round).then(text => setCommentary(text));
 
     const record: VoteRecord = {
       matchupId: currentMatchup.id,
@@ -84,6 +80,9 @@ const VotingArena: React.FC<VotingArenaProps> = ({ videos, userId, onComplete })
       userId,
       timestamp: Date.now()
     };
+
+    // Send vote to server for global analytics
+    api.submitVote(tournamentCode, record);
 
     setHistory(prev => [...prev, record]);
     setNextRoundPool(prev => [...prev, winner]);
@@ -123,13 +122,6 @@ const VotingArena: React.FC<VotingArenaProps> = ({ videos, userId, onComplete })
           </div>
         </div>
         
-        {commentary && (
-          <div className="hidden lg:flex flex-1 mx-8 bg-gray-700/50 rounded-lg px-4 py-2 items-center gap-2 border border-indigo-500/30">
-             <AlertCircle className="w-4 h-4 text-indigo-400 flex-none" />
-             <p className="text-sm text-indigo-200 italic truncate">"{commentary}"</p>
-          </div>
-        )}
-
         <div className="text-right">
            <span className="text-[10px] md:text-xs font-mono text-gray-500 uppercase">Siguiente Ronda: {nextRoundPool.length}</span>
         </div>
