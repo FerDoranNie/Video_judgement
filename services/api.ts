@@ -1,64 +1,54 @@
 import { Tournament, VideoItem, VoteRecord } from '../types';
 
-// En producción esto apunta a /api
+// En producción esto apunta a /api relativo
 const API_BASE = '/api';
 
 export const api = {
   async uploadVideo(file: File): Promise<string> {
-    try {
-      const formData = new FormData();
-      formData.append('video', file);
+    const formData = new FormData();
+    formData.append('video', file);
 
-      // Intentamos subir al servidor real
-      const res = await fetch(`${API_BASE}/upload`, {
-        method: 'POST',
-        body: formData,
-      });
+    console.log("Subiendo archivo a:", `${API_BASE}/upload`);
 
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`Error subiendo video: ${res.status} - ${err}`);
+    const res = await fetch(`${API_BASE}/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!res.ok) {
+      // Intentar leer el error JSON
+      const text = await res.text();
+      let errorMessage = `Error ${res.status}`;
+      try {
+        const json = JSON.parse(text);
+        if (json.error) errorMessage = json.error;
+      } catch (e) {
+        errorMessage = `Error del servidor: ${text.substring(0, 50)}`;
       }
-      
-      const data = await res.json();
-      return data.url; 
-    } catch (error) {
-      console.warn("API Upload failed (Offline/Demo mode active):", error);
-      // FALLBACK: Si falla el servidor (o estamos en demo sin backend),
-      // usamos el archivo local para que la app no se trabe.
-      return URL.createObjectURL(file);
+      throw new Error(errorMessage);
     }
+    
+    const data = await res.json();
+    return data.url; 
   },
 
   async createTournament(name: string, hostId: string, videos: VideoItem[]): Promise<Tournament> {
-    try {
-      const res = await fetch(`${API_BASE}/tournaments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, hostId, videos }),
-      });
+    const res = await fetch(`${API_BASE}/tournaments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, hostId, videos }),
+    });
 
-      if (!res.ok) throw new Error('Error al crear torneo en el servidor');
-      return await res.json();
-    } catch (error) {
-       console.error("Create Tournament failed:", error);
-       // Fallback for Demo purposes so the UI flow continues
-       // Note: Guests won't find this tournament if server is down.
-       const mockCode = Math.random().toString(36).substring(2, 7).toUpperCase();
-       return {
-         id: mockCode,
-         name: name + " (Local/Offline)",
-         hostId,
-         videos,
-         createdAt: Date.now(),
-         votes: [] // This type is actually missing in the interface but implied by usage
-       } as unknown as Tournament;
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Error creando torneo: ${text}`);
     }
+    return await res.json();
   },
 
   async getTournament(code: string): Promise<Tournament> {
     const res = await fetch(`${API_BASE}/tournaments/${code}`);
-    if (!res.ok) throw new Error('Torneo no encontrado en el servidor');
+    if (!res.ok) throw new Error('Torneo no encontrado');
     return await res.json();
   },
 
