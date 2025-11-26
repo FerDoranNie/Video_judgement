@@ -168,7 +168,7 @@ const VotingArena: React.FC<VotingArenaProps> = ({ videos, userId, tournamentCod
       
       {/* Bottom info */}
       <div className="flex-none p-2 text-center text-gray-600 text-[10px] md:text-xs bg-gray-900">
-        Toca cualquier tarjeta para votar. El perdedor será eliminado.
+        Usa los controles para ver el video. Presiona el botón de color para votar.
       </div>
     </div>
   );

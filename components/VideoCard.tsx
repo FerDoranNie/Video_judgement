@@ -15,9 +15,10 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, isActive, onSelect, label,
 
   return (
     <div 
-      className={`relative flex flex-col h-full bg-gray-800 rounded-xl overflow-hidden border-2 transition-all duration-300 group cursor-pointer ${isActive ? 'ring-4 ring-offset-2 ring-offset-gray-900' : 'border-gray-700 opacity-60 hover:opacity-100'}`}
+      className={`relative flex flex-col h-full bg-gray-800 rounded-xl overflow-hidden border-2 transition-all duration-300 group ${isActive ? 'ring-4 ring-offset-2 ring-offset-gray-900' : 'border-gray-700 opacity-60 hover:opacity-100'}`}
       style={{ borderColor: isActive ? color : '' }}
-      onClick={onSelect} // Make whole card clickable for better UX
+      // Eliminamos el onClick global para evitar votos accidentales al pausar.
+      // Ahora se vota exclusivamente con el botón inferior.
     >
       {/* Header */}
       <div className="absolute top-0 left-0 right-0 z-20 p-4 bg-gradient-to-b from-black/80 to-transparent pointer-events-none flex justify-between items-start">
@@ -32,12 +33,14 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, isActive, onSelect, label,
           <video 
             src={video.url}
             className="w-full h-full object-contain"
-            controls={false} // Hide controls in voting mode to focus on the decision (optional, but cleaner)
+            controls={true} // Habilitar controles para pausar/volumen
             autoPlay
-            muted
+            muted={false}   // Habilitar sonido
             loop
             playsInline
             onError={() => setHasError(true)}
+            // Importante: Detener la propagación del clic para que no active eventos padres si los hubiera
+            onClick={(e) => e.stopPropagation()} 
           />
         ) : (
           <div className="text-center p-6">
@@ -46,13 +49,6 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, isActive, onSelect, label,
             <p className="text-sm text-gray-400">El video no se pudo cargar.</p>
           </div>
         )}
-
-        {/* Hover/Tap Overlay - Tinder Style */}
-        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-          <div className="transform scale-90 group-hover:scale-110 transition-transform duration-300 bg-white/20 backdrop-blur-sm p-4 rounded-full border-2 border-white">
-            <CheckCircle className="w-16 h-16 text-white" />
-          </div>
-        </div>
       </div>
 
       {/* Info Area & Button */}
@@ -66,7 +62,7 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, isActive, onSelect, label,
             e.stopPropagation(); // Prevent double trigger
             onSelect();
           }}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-lg font-bold text-white text-lg uppercase tracking-wide transition-transform transform active:scale-95 shadow-lg"
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-lg font-bold text-white text-lg uppercase tracking-wide transition-transform transform active:scale-95 shadow-lg hover:brightness-110"
           style={{ backgroundColor: color }}
         >
            Votar por este
