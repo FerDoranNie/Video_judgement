@@ -29,7 +29,7 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
     const newPlaceholders: VideoItem[] = rawFiles.map(file => ({
       id: crypto.randomUUID(),
       title: file.name.replace(/\.[^/.]+$/, ""),
-      url: URL.createObjectURL(file), // Preview local
+      url: URL.createObjectURL(file), // Preview local temporal
       thumbnail: '',
       driveId: 'pending'
     }));
@@ -46,8 +46,7 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
       try {
         const serverUrl = await api.uploadVideo(file);
         
-        // Si el server devuelve una URL blob (fallback), es "Ready" pero local.
-        // Si devuelve /uploads/..., es "Ready" remoto.
+        // Actualizamos con la URL real del servidor
         setFiles(prev => prev.map(item => 
           item.id === placeholder.id ? { ...item, url: serverUrl, driveId: 'uploaded' } : item
         ));
@@ -56,7 +55,7 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
       } catch (error: any) {
         console.error("Upload failed", error);
         updateFileStatus(placeholder.id, 'error');
-        setErrorDetails(prev => ({...prev, [placeholder.id]: error.message || "Error desconocido"}));
+        setErrorDetails(prev => ({...prev, [placeholder.id]: "Falló la subida. Verifica tu conexión."}));
       }
     }
   };
@@ -68,12 +67,21 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
 
   const handleStart = () => {
     if (!tournamentName.trim()) { alert("Ponle un nombre a tu torneo."); return; }
-    if (files.length < 2) return;
+    if (files.length < 2) { alert("Necesitas al menos 2 videos."); return; }
     
     // Ensure all ready
     const notReady = files.filter(f => fileStatus[f.id] !== 'ready');
     if (notReady.length > 0) {
-      alert("Espera a que todos los videos digan 'Listo' o elimina los que tienen error.");
+      alert("Algunos videos tienen errores o siguen cargando. Elimínalos o espera.");
+      return;
+    }
+
+    // VALIDACIÓN CRÍTICA:
+    // Si algún video tiene una URL que empieza con "blob:", significa que es local
+    // y no se subió correctamente al servidor.
+    const localVideos = files.filter(f => f.url.startsWith('blob:'));
+    if (localVideos.length > 0) {
+      alert(`Error Crítico: ${localVideos.length} videos no se subieron al servidor correctamente (son locales). Tus invitados NO podrán verlos. Por favor elimínalos y súbelos de nuevo.`);
       return;
     }
 
@@ -82,7 +90,7 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
   };
 
   const handleUseDemoData = () => {
-     setTournamentName("Demo Local");
+     setTournamentName("Demo Local (Solo pruebas)");
      setFiles(MOCK_VIDEOS);
      const s: any = {};
      MOCK_VIDEOS.forEach(v => s[v.id] = 'ready');
@@ -95,7 +103,7 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
         <div className="mb-8 text-center">
           <Cloud className="w-12 h-12 text-purple-500 mx-auto mb-2" />
           <h1 className="text-3xl font-bold">Crear Torneo</h1>
-          <p className="text-gray-400">Sube tus videos. Si el servidor falla, la app usará modo local automáticamente.</p>
+          <p className="text-gray-400">Sube tus videos al servidor para que todos puedan verlos.</p>
         </div>
 
         <div className="max-w-md mx-auto mb-8">
@@ -126,8 +134,8 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
             {files.map((file, index) => (
               <div key={file.id} className={`relative bg-gray-800 rounded-xl overflow-hidden border ${fileStatus[file.id] === 'error' ? 'border-red-500' : 'border-gray-700'}`}>
                 <div className="absolute top-2 left-2 z-20 flex gap-2">
-                   {fileStatus[file.id] === 'uploading' && <span className="bg-blue-600 text-xs px-2 py-1 rounded text-white">Subiendo...</span>}
-                   {fileStatus[file.id] === 'ready' && <span className="bg-green-600 text-xs px-2 py-1 rounded text-white">Listo</span>}
+                   {fileStatus[file.id] === 'uploading' && <span className="bg-blue-600 text-xs px-2 py-1 rounded text-white animate-pulse">Subiendo...</span>}
+                   {fileStatus[file.id] === 'ready' && <span className="bg-green-600 text-xs px-2 py-1 rounded text-white">Listo (Nube)</span>}
                    {fileStatus[file.id] === 'error' && <span className="bg-red-600 text-xs px-2 py-1 rounded text-white">Error</span>}
                 </div>
                 <button onClick={() => handleRemove(file.id)} className="absolute top-2 right-2 z-20 bg-black/50 p-1 rounded-full hover:bg-red-600 text-white"><Trash2 size={16}/></button>
@@ -152,7 +160,7 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ onPublish }) => {
              className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 text-white font-bold py-3 px-8 rounded-xl flex items-center gap-2"
            >
              {isPublishing ? <Loader2 className="animate-spin"/> : <Share2 />}
-             {isPublishing ? 'Publicando...' : 'Publicar Torneo'}
+             {isPublishing ? 'Creando Torneo...' : 'Publicar Torneo'}
            </button>
         </div>
       </div>
