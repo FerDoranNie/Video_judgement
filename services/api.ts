@@ -1,7 +1,7 @@
 import { Tournament, VideoItem, VoteRecord } from '../types';
 
-// En producción esto apunta a /api relativo
-const API_BASE = '/api';
+// Apuntando a la nueva versión V2
+const API_BASE = '/api/v2';
 
 export const api = {
   async uploadVideo(file: File): Promise<string> {
@@ -16,14 +16,13 @@ export const api = {
     });
 
     if (!res.ok) {
-      // Intentar leer el error JSON
       const text = await res.text();
       let errorMessage = `Error ${res.status}`;
       try {
         const json = JSON.parse(text);
         if (json.error) errorMessage = json.error;
       } catch (e) {
-        errorMessage = `Error del servidor: ${text.substring(0, 50)}`;
+        errorMessage = `Error del servidor (${res.status}): ${text.substring(0, 100)}`;
       }
       throw new Error(errorMessage);
     }
@@ -68,5 +67,15 @@ export const api = {
      const res = await fetch(`${API_BASE}/tournaments/${code}/results`);
      if (!res.ok) throw new Error('Failed to fetch results');
      return await res.json();
+  },
+
+  // Test de salud
+  async checkHealth(): Promise<boolean> {
+    try {
+      const res = await fetch('/api/health');
+      return res.ok;
+    } catch (e) {
+      return false;
+    }
   }
 };
