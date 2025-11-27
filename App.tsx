@@ -11,18 +11,17 @@ function App() {
   const [user, setUser] = useState<User | null>(null);
   const [tournament, setTournament] = useState<Tournament | null>(null);
   
-  // Videos active in the current user's session (shuffled copy of the tournament pool)
+  // Videos active in the current user's session
   const [sessionVideos, setSessionVideos] = useState<VideoItem[]>([]);
   
-  // State to show the Lobby (only for admin right after creation)
   const [showLobby, setShowLobby] = useState(false);
   
   const [votingComplete, setVotingComplete] = useState(false);
   const [winner, setWinner] = useState<VideoItem | null>(null);
   const [voteHistory, setVoteHistory] = useState<VoteRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('Procesando...');
 
-  // Shuffle logic
   const shuffleVideos = (array: VideoItem[]) => {
     const newArray = [...array];
     for (let i = newArray.length - 1; i > 0; i--) {
@@ -40,6 +39,7 @@ function App() {
       }
       
       setLoading(true);
+      setStatusMessage("Buscando torneo...");
       try {
         const t = await api.getTournament(tournamentCode);
         setTournament(t);
@@ -50,27 +50,46 @@ function App() {
         console.error(e);
       } finally {
         setLoading(false);
+        setStatusMessage("");
       }
       
     } else {
       // Admin Login
       setUser(userData);
-      // Admin starts without a tournament, needs to create one
       setTournament(null); 
     }
   };
 
-  const handleAdminPublish = async (name: string, uploadedVideos: VideoItem[]) => {
+  const handleAdminPublish = async (name: string, videos: VideoItem[]) => {
     setLoading(true);
+    setStatusMessage("Conectando con el servidor...");
     try {
-      const newTournament = await api.createTournament(name, user?.id || 'admin', uploadedVideos);
+      // Ahora enviamos URLs y el nombre del creador (hostName)
+      const newTournament = await api.createTournament(
+        name, 
+        user?.id || 'admin', 
+        videos, 
+        user?.username // Pasamos el nombre del usuario logueado
+      );
+      setStatusMessage("¡Torneo creado!");
+      
       setTournament(newTournament);
       setShowLobby(true);
-    } catch (e) {
-      alert("Error al crear el torneo. Intenta de nuevo.");
-      console.error(e);
+      
+      // Actualizar URL del navegador para que el Admin pueda copiarla fácilmente
+      const url = new URL(window.location.href);
+      url.searchParams.set('code', newTournament.id);
+      window.history.pushState({}, '', url);
+
+    } catch (e: any) {
+      // Mostrar el error real del backend de forma amigable
+      const msg = e.message || "Error desconocido";
+      
+      alert(`Ups! Hubo un problema: ${msg}`);
+      console.error("Detalle del error:", e);
     } finally {
       setLoading(false);
+      setStatusMessage("");
     }
   };
 
@@ -82,36 +101,33 @@ function App() {
   };
 
   const handleVotingComplete = (winners: VideoItem[], history: VoteRecord[]) => {
-    setWinner(winners[0]); 
+    setWinner(winners[0] || null); 
     setVoteHistory(history);
     setVotingComplete(true);
   };
 
-  // --- RENDER FLOW ---
-
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500 mb-4"></div>
+        <div className="flex flex-col items-center gap-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+          <p className="text-gray-400 animate-pulse text-lg">{statusMessage}</p>
+        </div>
       </div>
     );
   }
 
   // 1. Auth Step
   if (!user) {
-    return (
-      <AuthScreen 
-        onLogin={handleLogin} 
-      />
-    );
+    return <AuthScreen onLogin={handleLogin} />;
   }
 
-  // 2. Upload/Creation Step (Only for Admin if no active tournament yet)
+  // 2. Upload/Creation Step (Admin)
   if (user.role === 'admin' && !tournament) {
     return <UploadScreen onPublish={handleAdminPublish} />;
   }
 
-  // 3. Lobby (Admin only, right after creation)
+  // 3. Lobby (Admin)
   if (user.role === 'admin' && showLobby && tournament) {
     return (
       <TournamentLobby 
@@ -122,13 +138,14 @@ function App() {
   }
 
   // 5. Results Step
-  if (votingComplete && winner && tournament) {
+  if (votingComplete && tournament) {
     return (
       <ResultsScreen 
         winner={winner} 
         history={voteHistory} 
-        allVideos={sessionVideos} // Pass session videos for local context, or tournament.videos for global
+        allVideos={sessionVideos} 
         tournamentCode={tournament.id}
+        hostName={tournament.hostName || "Admin"} // Pasamos el nombre del creador
       />
     );
   }
@@ -145,7 +162,6 @@ function App() {
     );
   }
 
-  // Fallback
   return <div className="text-white p-10">Cargando aplicación...</div>;
 }
 

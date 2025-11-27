@@ -18,6 +18,7 @@ export interface Tournament {
   id: string; // Unique code (e.g., "AF3D2")
   name: string;
   hostId: string;
+  hostName?: string; // Nuevo: Nombre del creador
   videos: VideoItem[];
   createdAt: number;
 }
@@ -30,10 +31,10 @@ export interface Matchup {
 }
 
 export interface VoteRecord {
-  matchupId: string;
-  winnerId: string;
-  loserId: string;
+  videoId: string; // ID del video calificado
   userId: string;
+  score: number;   // Calificación (ej. 1 al 10)
+  liked: boolean;  // Nuevo: Me gusta / No me gusta
   timestamp: number;
 }
 
