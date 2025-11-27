@@ -1,3 +1,4 @@
+
 export interface VideoItem {
   id: string;
   title: string;
@@ -21,6 +22,7 @@ export interface Tournament {
   hostName?: string; // Nuevo: Nombre del creador
   videos: VideoItem[];
   createdAt: number;
+  isActive: boolean; // Nuevo: Controla si el torneo acepta nuevos votantes
 }
 
 export interface Matchup {
@@ -33,6 +35,7 @@ export interface Matchup {
 export interface VoteRecord {
   videoId: string; // ID del video calificado
   userId: string;
+  username?: string; // Nuevo: Nombre visible del usuario
   score: number;   // Calificación (ej. 1 al 10)
   liked: boolean;  // Nuevo: Me gusta / No me gusta
   timestamp: number;

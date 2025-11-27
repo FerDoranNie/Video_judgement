@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { VideoItem } from '../types';
-import { AlertCircle, ExternalLink } from 'lucide-react';
+import { AlertCircle, ExternalLink, Clock, FileWarning } from 'lucide-react';
 
 interface VideoCardProps {
   video: VideoItem;
@@ -78,20 +78,33 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, isActive, onSelect, label,
           </div>
         )}
 
-        {/* Caso 3: Error Total (Ni directo ni Drive ID detectado) */}
+        {/* Caso 3: Error Total (Ni directo ni Drive ID detectado) -> Probable Expiración */}
         {videoError && !driveId && (
-          <div className="text-center p-6 flex flex-col items-center z-10">
-            <AlertCircle className="w-12 h-12 text-yellow-500 mb-2" />
-            <p className="text-white font-bold mb-1">Video no disponible</p>
-            <a 
-              href={video.url} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 mt-2"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <ExternalLink size={16} /> Ver original
-            </a>
+          <div className="text-center p-6 flex flex-col items-center justify-center h-full z-10 bg-gray-900/80">
+            <div className="bg-gray-800 p-4 rounded-full mb-4 shadow-xl">
+              <FileWarning className="w-12 h-12 text-red-500" />
+            </div>
+            <h3 className="text-xl font-bold text-white mb-2">Video No Disponible</h3>
+            <p className="text-gray-400 text-sm max-w-xs mb-4">
+              Es posible que el archivo haya expirado (30+ días) o haya sido eliminado del servidor.
+            </p>
+            
+            <div className="flex items-center gap-2 text-xs text-orange-400 bg-orange-900/30 px-3 py-1 rounded-full border border-orange-500/20">
+               <Clock size={12} />
+               <span>Limpieza automática activa</span>
+            </div>
+
+            {video.url && !video.url.includes('blob') && (
+              <a 
+                href={video.url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="mt-6 text-blue-400 hover:text-blue-300 text-xs font-bold flex items-center gap-1 underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <ExternalLink size={12} /> Intentar abrir enlace original
+              </a>
+            )}
           </div>
         )}
       </div>
@@ -108,10 +121,12 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, isActive, onSelect, label,
               e.stopPropagation();
               onSelect();
             }}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-lg font-bold text-white text-lg uppercase tracking-wide transition-transform transform active:scale-95 shadow-lg hover:brightness-110"
-            style={{ backgroundColor: color }}
+            disabled={videoError && !driveId} // Deshabilitar si está roto
+            className={`w-full flex items-center justify-center gap-2 py-3 rounded-lg font-bold text-white text-lg uppercase tracking-wide transition-transform transform active:scale-95 shadow-lg hover:brightness-110 
+              ${(videoError && !driveId) ? 'bg-gray-600 cursor-not-allowed opacity-50' : ''}`}
+            style={{ backgroundColor: (videoError && !driveId) ? undefined : color }}
           >
-             Votar por este
+             {(videoError && !driveId) ? 'No disponible' : 'Votar por este'}
           </button>
         )}
       </div>

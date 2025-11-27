@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { User, VideoItem, VoteRecord, Tournament } from './types';
 import AuthScreen from './components/AuthScreen';
@@ -5,7 +6,9 @@ import UploadScreen from './components/UploadScreen';
 import VotingArena from './components/VotingArena';
 import ResultsScreen from './components/ResultsScreen';
 import TournamentLobby from './components/TournamentLobby';
+import FirebaseSetupScreen from './components/FirebaseSetupScreen'; 
 import { api } from './services/api';
+import { isConfigured, saveConfig } from './firebaseConfig'; 
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -21,6 +24,11 @@ function App() {
   const [voteHistory, setVoteHistory] = useState<VoteRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('Procesando...');
+
+  // --- CHECK CONFIGURACIÓN FIREBASE ---
+  if (!isConfigured) {
+    return <FirebaseSetupScreen onSave={saveConfig} />;
+  }
 
   const shuffleVideos = (array: VideoItem[]) => {
     const newArray = [...array];
@@ -39,9 +47,25 @@ function App() {
       }
       
       setLoading(true);
-      setStatusMessage("Buscando torneo...");
+      setStatusMessage("Verificando acceso...");
       try {
         const t = await api.getTournament(tournamentCode);
+        
+        // 1. Validar si el torneo está activo
+        if (t.isActive === false) { // Chequeo explícito de false
+             alert("Este evento ha sido finalizado por el organizador. Ya no se aceptan más votos.");
+             setLoading(false);
+             return;
+        }
+
+        // 2. Validar si el usuario ya votó
+        const hasVoted = await api.checkIfUserVoted(tournamentCode, userData.username);
+        if (hasVoted) {
+             alert(`El usuario "${userData.username}" ya ha participado en este torneo. No se permiten votos duplicados.`);
+             setLoading(false);
+             return;
+        }
+
         setTournament(t);
         setUser(userData);
         setSessionVideos(shuffleVideos(t.videos));
@@ -60,36 +84,27 @@ function App() {
     }
   };
 
-  const handleAdminPublish = async (name: string, videos: VideoItem[]) => {
-    setLoading(true);
-    setStatusMessage("Conectando con el servidor...");
+  const handleAdminPublish = async (name: string, videos: VideoItem[]): Promise<void> => {
     try {
-      // Ahora enviamos URLs y el nombre del creador (hostName)
       const newTournament = await api.createTournament(
         name, 
         user?.id || 'admin', 
         videos, 
-        user?.username // Pasamos el nombre del usuario logueado
+        user?.username 
       );
-      setStatusMessage("¡Torneo creado!");
       
       setTournament(newTournament);
       setShowLobby(true);
       
-      // Actualizar URL del navegador para que el Admin pueda copiarla fácilmente
       const url = new URL(window.location.href);
       url.searchParams.set('code', newTournament.id);
       window.history.pushState({}, '', url);
 
     } catch (e: any) {
-      // Mostrar el error real del backend de forma amigable
       const msg = e.message || "Error desconocido";
-      
-      alert(`Ups! Hubo un problema: ${msg}`);
+      alert(`Ups! Error al crear torneo:\n\n${msg}`);
       console.error("Detalle del error:", e);
-    } finally {
-      setLoading(false);
-      setStatusMessage("");
+      throw e; 
     }
   };
 
@@ -104,6 +119,11 @@ function App() {
     setWinner(winners[0] || null); 
     setVoteHistory(history);
     setVotingComplete(true);
+  };
+
+  // Función para reiniciar la app completamente (Logout)
+  const handleResetApp = () => {
+    window.location.reload();
   };
 
   if (loading) {
@@ -145,7 +165,9 @@ function App() {
         history={voteHistory} 
         allVideos={sessionVideos} 
         tournamentCode={tournament.id}
-        hostName={tournament.hostName || "Admin"} // Pasamos el nombre del creador
+        hostName={tournament.hostName || "Admin"}
+        isHost={user.role === 'admin'} // Pasamos flag si es admin para mostrar botón de cerrar
+        isActive={tournament.isActive !== false} // Estado actual
       />
     );
   }
@@ -155,9 +177,12 @@ function App() {
     return (
       <VotingArena 
         videos={sessionVideos} 
-        userId={user.id} 
+        userId={user.id}
+        username={user.username}
+        userRole={user.role}
         tournamentCode={tournament.id}
         onComplete={handleVotingComplete} 
+        onExit={handleResetApp} // Callback para volver al inicio
       />
     );
   }

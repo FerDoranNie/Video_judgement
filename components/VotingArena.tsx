@@ -1,79 +1,139 @@
+
 import React, { useState } from 'react';
-import { VideoItem, VoteRecord } from '../types';
+import { VideoItem, VoteRecord, UserRole } from '../types';
 import VideoCard from './VideoCard';
-import { Star, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Star, ThumbsUp, ThumbsDown, CheckCircle, ShieldCheck, LogOut, Loader2 } from 'lucide-react';
 import { api } from '../services/api';
 
 interface VotingArenaProps {
   videos: VideoItem[];
   userId: string;
+  username: string; // Recibir nombre usuario
+  userRole: UserRole; // Recibir rol
   tournamentCode: string;
   onComplete: (winners: VideoItem[], history: VoteRecord[]) => void;
+  onExit?: () => void; // Nuevo callback para salir
 }
 
-const VotingArena: React.FC<VotingArenaProps> = ({ videos, userId, tournamentCode, onComplete }) => {
+const VotingArena: React.FC<VotingArenaProps> = ({ videos, userId, username, userRole, tournamentCode, onComplete, onExit }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [history, setHistory] = useState<VoteRecord[]>([]);
   const [isAnimating, setIsAnimating] = useState(false);
+  const [isFinished, setIsFinished] = useState(false);
+  const [isSending, setIsSending] = useState(false);
 
   const currentVideo = videos[currentIndex];
   const progress = ((currentIndex) / videos.length) * 100;
 
   const handleVote = async (liked: boolean) => {
-    if (isAnimating || !currentVideo) return;
+    if (isAnimating || !currentVideo || isSending) return;
     
     setIsAnimating(true);
+    const isLastVideo = currentIndex >= videos.length - 1;
+
+    // Si es el último video, mostramos estado de carga para asegurar que se guarde antes de salir
+    if (isLastVideo) setIsSending(true);
 
     const record: VoteRecord = {
       videoId: currentVideo.id,
       userId,
+      username, // Guardar nombre
       score: liked ? 1 : 0, 
       liked: liked,
       timestamp: Date.now()
     };
 
-    // Enviar voto (no bloqueante para la UI)
-    api.submitVote(tournamentCode, record);
+    try {
+      // Enviar voto
+      // Si es el último, esperamos la respuesta para asegurar consistencia
+      const votePromise = api.submitVote(tournamentCode, record);
+      if (isLastVideo) {
+        await votePromise;
+      }
+    } catch (e) {
+      console.error("Error guardando voto", e);
+    }
 
     const newHistory = [...history, record];
     setHistory(newHistory);
 
-    // Transición
-    setTimeout(() => {
-      if (currentIndex >= videos.length - 1) {
-        finishSession(newHistory);
-      } else {
-        // Siguiente video
+    // Transición visual
+    if (isLastVideo) {
+       setIsFinished(true);
+       setIsSending(false);
+    } else {
+      setTimeout(() => {
         setCurrentIndex(prev => prev + 1);
         setIsAnimating(false);
-      }
-    }, 300); 
+      }, 300);
+    }
   };
 
-  const finishSession = (finalHistory: VoteRecord[]) => {
-    // Calcular ranking local rápido para pasar un ganador válido a la App
-    // y evitar que se quede bloqueada esperando un "winner".
+  const handleAdminFinish = () => {
+    // Solo el admin llama a esta función para ir a ResultsScreen
     const scores: Record<string, number> = {};
-    
-    finalHistory.forEach(v => {
+    history.forEach(v => {
       if (v.liked) {
         scores[v.videoId] = (scores[v.videoId] || 0) + 1;
       }
     });
-
-    // Ordenar videos por likes de esta sesión
+    // Ordenar videos por likes de esta sesión (aunque en results screen se recalcula globalmente)
     const sortedVideos = [...videos].sort((a, b) => {
       return (scores[b.id] || 0) - (scores[a.id] || 0);
     });
-
-    // Enviar lista ordenada (el index 0 es el ganador de la sesión)
-    onComplete(sortedVideos, finalHistory);
+    onComplete(sortedVideos, history);
   };
+
+  if (isFinished) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 p-6 text-center text-white">
+        <div className="bg-gray-800 p-8 rounded-2xl shadow-2xl max-w-md w-full border border-gray-700">
+          <div className="flex justify-center mb-6">
+            <CheckCircle className="w-20 h-20 text-green-500" />
+          </div>
+          <h2 className="text-3xl font-bold mb-4">¡Gracias por votar!</h2>
+          <p className="text-gray-300 mb-8 text-lg">
+            <span className="text-white font-bold">{username}</span>, tus calificaciones han sido registradas.
+          </p>
+
+          {userRole === 'guest' && (
+            <div>
+              <button 
+                 onClick={() => onExit ? onExit() : window.location.reload()}
+                 className="mt-4 flex items-center justify-center gap-2 w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition shadow-lg"
+              >
+                <LogOut size={20} /> Finalizar y Volver al Inicio
+              </button>
+            </div>
+          )}
+
+          {userRole === 'admin' && (
+            <div className="space-y-4">
+              <div className="bg-purple-900/30 border border-purple-500/30 rounded-lg p-4 mb-4">
+                 <p className="text-sm text-purple-200 font-bold flex items-center gap-2 justify-center mb-1">
+                   <ShieldCheck size={16}/> Panel de Administrador
+                 </p>
+                 <p className="text-xs text-purple-300">
+                   Como organizador, puedes acceder a los resultados finales y descargar los reportes.
+                 </p>
+              </div>
+              <button
+                onClick={handleAdminFinish}
+                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-4 rounded-xl shadow-lg transition-transform hover:scale-[1.02] flex items-center justify-center gap-2"
+              >
+                <ShieldCheck /> Ver Resultados Globales
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (!currentVideo) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-white bg-gray-900">
-        <p className="text-xl font-bold animate-pulse">Procesando resultados...</p>
+        <p className="text-xl font-bold animate-pulse">Cargando...</p>
       </div>
     );
   }
@@ -122,19 +182,19 @@ const VotingArena: React.FC<VotingArenaProps> = ({ videos, userId, tournamentCod
           <div className="flex justify-center gap-4 w-full">
             <button
               onClick={() => handleVote(true)}
-              disabled={isAnimating}
-              className="flex-1 flex flex-col items-center justify-center gap-2 py-4 rounded-2xl font-bold transition-all transform active:scale-95 hover:brightness-110 bg-green-600 text-white shadow-lg border-b-4 border-green-800 hover:border-green-700"
+              disabled={isAnimating || isSending}
+              className="flex-1 flex flex-col items-center justify-center gap-2 py-4 rounded-2xl font-bold transition-all transform active:scale-95 hover:brightness-110 bg-green-600 text-white shadow-lg border-b-4 border-green-800 hover:border-green-700 disabled:opacity-50 disabled:grayscale"
             >
-              <ThumbsUp size={32} className="fill-current" />
+              {isSending ? <Loader2 className="animate-spin" /> : <ThumbsUp size={32} className="fill-current" />}
               <span className="text-lg">SÍ (LIKE)</span>
             </button>
             
             <button
               onClick={() => handleVote(false)}
-              disabled={isAnimating}
-              className="flex-1 flex flex-col items-center justify-center gap-2 py-4 rounded-2xl font-bold transition-all transform active:scale-95 hover:brightness-110 bg-red-600 text-white shadow-lg border-b-4 border-red-800 hover:border-red-700"
+              disabled={isAnimating || isSending}
+              className="flex-1 flex flex-col items-center justify-center gap-2 py-4 rounded-2xl font-bold transition-all transform active:scale-95 hover:brightness-110 bg-red-600 text-white shadow-lg border-b-4 border-red-800 hover:border-red-700 disabled:opacity-50 disabled:grayscale"
             >
-              <ThumbsDown size={32} className="fill-current" />
+              {isSending ? <Loader2 className="animate-spin" /> : <ThumbsDown size={32} className="fill-current" />}
               <span className="text-lg">NO (NEXT)</span>
             </button>
           </div>
