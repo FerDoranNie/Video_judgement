@@ -5,24 +5,40 @@ export interface VideoItem {
   url: string; // Embed URL or Source URL
   thumbnail: string;
   driveId?: string;
+  scriptText?: string; // Nuevo: Contenido del guion
 }
 
-export type UserRole = 'admin' | 'guest';
+export type UserRole = 'admin' | 'director' | 'colaborador' | 'prueba';
+export type VotingMethod = 'like' | 'ranking';
+export type AppTheme = 'blue' | 'orange';
+
+export interface RankingQuestion {
+  id: string;
+  text: string;
+  // maxScale eliminado, ahora es global en el torneo
+}
 
 export interface User {
   username: string;
   id: string;
   role: UserRole;
+  employeeId?: string; 
 }
 
 export interface Tournament {
-  id: string; // Unique code (e.g., "AF3D2")
+  id: string; 
   name: string;
   hostId: string;
-  hostName?: string; // Nuevo: Nombre del creador
+  hostName?: string; 
   videos: VideoItem[];
   createdAt: number;
-  isActive: boolean; // Nuevo: Controla si el torneo acepta nuevos votantes
+  isActive: boolean;
+  validDirectorIds?: string[];
+  
+  // Nuevo: Configuración de votación
+  votingMethod: VotingMethod;
+  rankingScale?: number; // Escala global (ej. 10)
+  rankingQuestions?: RankingQuestion[];
 }
 
 export interface Matchup {
@@ -33,11 +49,21 @@ export interface Matchup {
 }
 
 export interface VoteRecord {
-  videoId: string; // ID del video calificado
+  videoId: string;
   userId: string;
-  username?: string; // Nuevo: Nombre visible del usuario
-  score: number;   // Calificación (ej. 1 al 10)
-  liked: boolean;  // Nuevo: Me gusta / No me gusta
+  username?: string;
+  userRole?: UserRole; 
+  employeeId?: string; 
+  
+  score: number; // Total points (1 for like, sum of answers for ranking)
+  liked: boolean; // True if score > 0 (simplification for backward compat)
+  
+  // Nuevo: Desglose de respuestas ranking
+  rankingScores?: Record<string, number>; // questionId -> score
+  
+  // Nuevo: Comentarios opcionales
+  comment?: string;
+
   timestamp: number;
 }
 
@@ -48,5 +74,5 @@ export interface TournamentState {
   round: number;
   completed: boolean;
   history: VoteRecord[];
-  winners: VideoItem[]; // Final top list
+  winners: VideoItem[]; 
 }

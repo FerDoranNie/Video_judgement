@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { VideoItem } from '../types';
-import { AlertCircle, ExternalLink, Clock, FileWarning } from 'lucide-react';
+import { AlertCircle, ExternalLink, Clock, FileWarning, Play } from 'lucide-react';
 
 interface VideoCardProps {
   video: VideoItem;
@@ -8,20 +9,18 @@ interface VideoCardProps {
   onSelect?: () => void;
   label?: string;
   color?: string;
-  hideAction?: boolean; // Nueva prop para ocultar el botón interno
+  hideAction?: boolean; 
 }
 
 const VideoCard: React.FC<VideoCardProps> = ({ video, isActive, onSelect, label, color, hideAction = false }) => {
   const [videoError, setVideoError] = useState(false);
   const [driveId, setDriveId] = useState<string | null>(null);
 
-  // Extraer ID de Drive si es posible para usarlo en el fallback
   useEffect(() => {
-    // Patrones comunes de ID de Drive
     const patterns = [
-      /\/d\/([a-zA-Z0-9_-]+)/,       // .../d/ID...
-      /id=([a-zA-Z0-9_-]+)/,         // ...id=ID...
-      /file\/d\/([a-zA-Z0-9_-]+)/    // ...file/d/ID...
+      /\/d\/([a-zA-Z0-9_-]+)/,       
+      /id=([a-zA-Z0-9_-]+)/,         
+      /file\/d\/([a-zA-Z0-9_-]+)/    
     ];
 
     for (const pattern of patterns) {
@@ -35,26 +34,23 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, isActive, onSelect, label,
 
   return (
     <div 
-      className={`relative flex flex-col h-full bg-gray-800 rounded-xl overflow-hidden border-2 transition-all duration-300 group ${isActive ? 'ring-4 ring-offset-2 ring-offset-gray-900' : 'border-gray-700 opacity-60 hover:opacity-100'}`}
-      style={{ borderColor: isActive ? (color || '#4f46e5') : '' }}
+      className={`relative w-full h-full flex flex-col bg-black rounded-xl overflow-hidden shadow-2xl transition-all duration-300 group ${isActive ? '' : 'opacity-60 hover:opacity-100'}`}
     >
-      {/* Header opcional */}
       {label && (
-        <div className="absolute top-0 left-0 right-0 z-20 p-4 bg-gradient-to-b from-black/80 to-transparent pointer-events-none flex justify-between items-start">
-          <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold text-white uppercase tracking-wider bg-opacity-90 shadow-lg`} style={{ backgroundColor: color }}>
+        <div className="absolute top-4 left-4 z-20">
+          <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold text-white uppercase tracking-wider shadow-lg backdrop-blur-md`} style={{ backgroundColor: color || '#4f46e5' }}>
             {label}
           </span>
         </div>
       )}
 
-      {/* Video Area */}
-      <div className="flex-1 relative bg-black flex items-center justify-center min-h-0 overflow-hidden">
+      {/* Area del Video */}
+      <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden rounded-xl border border-gray-800/50">
         
-        {/* Caso 1: Video HTML5 Directo (Ideal) */}
         {!videoError && (
           <video 
             src={video.url}
-            className="w-full h-full object-contain"
+            className="w-full h-full max-h-full object-contain"
             controls={true}
             loop
             playsInline
@@ -63,73 +59,52 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, isActive, onSelect, label,
           />
         )}
 
-        {/* Caso 2: Fallback a Iframe de Drive (Si falla el directo) */}
         {videoError && driveId && (
-          <div className="w-full h-full bg-black relative">
-            <iframe
-              src={`https://drive.google.com/file/d/${driveId}/preview`}
-              className="w-full h-full border-0"
-              allow="autoplay; encrypted-media"
-              allowFullScreen
-              title={video.title}
-            />
-            {/* Overlay transparente para capturar clicks si no se está interactuando con controles */}
-            <div className="absolute top-0 left-0 right-0 h-12 bg-transparent pointer-events-none" />
-          </div>
+          <iframe
+            src={`https://drive.google.com/file/d/${driveId}/preview`}
+            className="w-full h-full border-0"
+            allow="autoplay; encrypted-media"
+            allowFullScreen
+            title={video.title}
+          />
         )}
 
-        {/* Caso 3: Error Total (Ni directo ni Drive ID detectado) -> Probable Expiración */}
         {videoError && !driveId && (
-          <div className="text-center p-6 flex flex-col items-center justify-center h-full z-10 bg-gray-900/80">
-            <div className="bg-gray-800 p-4 rounded-full mb-4 shadow-xl">
-              <FileWarning className="w-12 h-12 text-red-500" />
+          <div className="text-center p-6 flex flex-col items-center justify-center">
+            <div className="bg-gray-800 p-4 rounded-full mb-4 shadow-xl border border-gray-700">
+              <FileWarning className="w-10 h-10 text-red-500" />
             </div>
-            <h3 className="text-xl font-bold text-white mb-2">Video No Disponible</h3>
-            <p className="text-gray-400 text-sm max-w-xs mb-4">
-              Es posible que el archivo haya expirado (30+ días) o haya sido eliminado del servidor.
-            </p>
-            
-            <div className="flex items-center gap-2 text-xs text-orange-400 bg-orange-900/30 px-3 py-1 rounded-full border border-orange-500/20">
-               <Clock size={12} />
-               <span>Limpieza automática activa</span>
-            </div>
-
+            <h3 className="text-white font-medium mb-1">No disponible</h3>
+            <p className="text-gray-500 text-xs max-w-[200px]">El archivo no pudo ser cargado.</p>
             {video.url && !video.url.includes('blob') && (
               <a 
                 href={video.url} 
                 target="_blank" 
                 rel="noopener noreferrer"
-                className="mt-6 text-blue-400 hover:text-blue-300 text-xs font-bold flex items-center gap-1 underline"
-                onClick={(e) => e.stopPropagation()}
+                className="mt-4 text-indigo-400 hover:text-indigo-300 text-xs font-bold flex items-center gap-1"
               >
-                <ExternalLink size={12} /> Intentar abrir enlace original
+                <ExternalLink size={12} /> Abrir Externamente
               </a>
             )}
           </div>
         )}
       </div>
 
-      {/* Info Area & Button */}
-      <div className="flex-none p-4 bg-gray-800 border-t border-gray-700 z-10">
-        <div className="mb-2">
-          <h3 className="font-bold text-white truncate text-center text-xl">{video.title}</h3>
-        </div>
-        
-        {!hideAction && onSelect && (
+      {!hideAction && onSelect && (
+        <div className="p-4 bg-gray-900 border-t border-gray-800">
           <button
             onClick={(e) => {
               e.stopPropagation();
               onSelect();
             }}
-            disabled={videoError && !driveId} // Deshabilitar si está roto
-            className={`w-full flex items-center justify-center gap-2 py-3 rounded-lg font-bold text-white text-lg uppercase tracking-wide transition-transform transform active:scale-95 shadow-lg hover:brightness-110 
-              ${(videoError && !driveId) ? 'bg-gray-600 cursor-not-allowed opacity-50' : ''}`}
-            style={{ backgroundColor: (videoError && !driveId) ? undefined : color }}
+            disabled={videoError && !driveId}
+            className={`w-full py-3 rounded-lg font-bold text-white text-sm uppercase tracking-wide transition-all active:scale-95 shadow-lg
+              ${(videoError && !driveId) ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500'}`}
           >
-             {(videoError && !driveId) ? 'No disponible' : 'Votar por este'}
+             {(videoError && !driveId) ? 'Error' : 'Seleccionar Video'}
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };
